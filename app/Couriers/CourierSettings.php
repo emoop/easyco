@@ -79,6 +79,11 @@ final class CourierSettings
             $raw = trim((string) $this->settings->get($this->fieldKey($descriptor->code(), $field, $environment)));
 
             if ($raw === '') {
+                // Nothing stored: the declared default of this environment, if the field has one.
+                $raw = (string) $field->defaultFor($environment);
+            }
+
+            if ($raw === '') {
                 continue;
             }
 

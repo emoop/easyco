@@ -1,0 +1,33 @@
+{
+    "offices": [
+        {
+            "id": 100,
+            "name": "ОФИС ЛОЗЕНЕЦ",
+            "nameEn": "OFFICE LOZENETS",
+            "siteId": 68134,
+            "type": "OFFICE",
+            "pickUpAllowed": true,
+            "dropOffAllowed": true,
+            "cardPaymentAllowed": true,
+            "cashPaymentAllowed": false,
+            "validTo": "2030-12-31",
+            "address": {"siteId": 68134, "siteName": "СОФИЯ", "postCode": "1000", "fullAddressString": "бул. Черни връх 51", "x": 23.3197, "y": 42.6726}
+        },
+        {
+            "id": 7001,
+            "name": "SPEEDBOX ПЛОВДИВ ЦЕНТЪР",
+            "siteId": 56784,
+            "type": "APT",
+            "pickUpAllowed": false,
+            "cardPaymentAllowed": true,
+            "cashPaymentAllowed": true,
+            "address": {"siteId": 56784, "siteName": "ПЛОВДИВ", "postCode": "4000", "fullAddressString": "ул. Княз Александър I 15", "x": "24.7453", "y": "42.1354"}
+        },
+        {
+            "id": 101,
+            "name": "No type",
+            "siteId": 1,
+            "address": {"siteName": "СОФИЯ", "fullAddressString": "ул. Тест 1"}
+        }
+    ]
+}

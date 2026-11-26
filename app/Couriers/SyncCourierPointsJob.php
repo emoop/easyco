@@ -22,10 +22,10 @@ final class SyncCourierPointsJob implements ShouldQueue
 
     public int $timeout = 600;
 
-    public function __construct(public readonly string $carrierCode, public readonly string $trigger = 'schedule') {}
+    public function __construct(public readonly string $carrierCode, public readonly string $trigger = 'schedule', public readonly bool $withSettlements = false) {}
 
     public function handle(PickupPointSyncer $syncer): void
     {
-        $syncer->run($this->carrierCode, $this->trigger);
+        $syncer->run($this->carrierCode, $this->trigger, $this->withSettlements);
     }
 }

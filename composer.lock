@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "94e16cb7f0acf61e0c85ed45efca85b7",
+    "content-hash": "e231fe343b6f240353c3dac70a745801",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -1125,6 +1125,88 @@
                 "MIT"
             ],
             "description": "EasyCo BOX NOW courier adapter (COUR-1a: the parcel-locker list only). Talks to BOX NOW only through the Shipping package's CourierHttp port.",
+            "transport-options": {
+                "relative": true
+            }
+        },
+        {
+            "name": "easyco/courier-econt",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "packages/EasyCo/CourierEcont",
+                "reference": "a7cc772912b27d1ae130aad4317afc8313fe19d9"
+            },
+            "require": {
+                "easyco/shipping": "@dev",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "EasyCo\\CourierEcont\\Providers\\CourierEcontServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "EasyCo\\CourierEcont\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "EasyCo\\CourierEcont\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "EasyCo Econt courier adapter (COUR-1b: offices, automatic stations and settlements only). Talks to Econt only through the Shipping package's CourierHttp port.",
+            "transport-options": {
+                "relative": true
+            }
+        },
+        {
+            "name": "easyco/courier-speedy",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "packages/EasyCo/CourierSpeedy",
+                "reference": "4b0f074d4b00093cd057156d2cd6e267045aba4c"
+            },
+            "require": {
+                "easyco/shipping": "@dev",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "EasyCo\\CourierSpeedy\\Providers\\CourierSpeedyServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "EasyCo\\CourierSpeedy\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "EasyCo\\CourierSpeedy\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "EasyCo Speedy courier adapter (COUR-1b: offices, automats and settlements only). Talks to Speedy only through the Shipping package's CourierHttp port.",
             "transport-options": {
                 "relative": true
             }
@@ -11544,6 +11626,8 @@
         "easyco/cart": 20,
         "easyco/catalog": 20,
         "easyco/courier-boxnow": 20,
+        "easyco/courier-econt": 20,
+        "easyco/courier-speedy": 20,
         "easyco/extensibility": 20,
         "easyco/inventory": 20,
         "easyco/media": 20,

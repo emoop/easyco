@@ -26,6 +26,22 @@ trait EnablesBoxNow
         }
     }
 
+    /** Switches Econt or Speedy on with FAKE credentials (never a real one) in the TEST environment. */
+    protected function enableCourier(string $code, string $user = 'fake-user-for-tests', string $password = 'fake-password-for-tests'): void
+    {
+        $settings = app(SiteSettingsRepository::class);
+
+        $settings->set("couriers.{$code}.enabled", '1');
+        $settings->set("couriers.{$code}.environment", 'test');
+        $settings->set("couriers.{$code}.test.username", $user);
+        $settings->set("couriers.{$code}.test.password", Crypt::encryptString($password));
+    }
+
+    protected function courierFixture(string $package, string $file): string
+    {
+        return (string) file_get_contents(base_path("packages/EasyCo/{$package}/tests/fixtures/{$file}"));
+    }
+
     protected function boxNowFixture(): string
     {
         return (string) file_get_contents(base_path('packages/EasyCo/CourierBoxNow/tests/fixtures/apms_bg-BG.sample.json'));

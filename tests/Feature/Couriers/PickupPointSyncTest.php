@@ -69,34 +69,46 @@ class PickupPointSyncTest extends TestCase
         return DB::table('shipping_pickup_points')->where('carrier_code', 'boxnow')->where('is_active', 1)->count();
     }
 
-    public function test_a_first_sync_into_an_empty_table_stores_the_valid_points_and_counts_the_malformed(): void
+    public function test_a_first_sync_into_an_empty_table_stores_the_points_and_links_them_to_settlements(): void
     {
         $this->enableBoxNow();
         $this->answer($this->boxNowFixture());
 
         $run = $this->sync('manual');
 
-        $this->assertSame('partial', $run->outcome, 'a run that skipped something says so');
-        $this->assertSame(3, $run->seen);
-        $this->assertSame(3, $run->new_count);
-        $this->assertSame(0, $run->changed);
-        $this->assertSame(0, $run->deactivated);
-        $this->assertSame(4, $run->skipped);
-        $this->assertSame(0, $run->unmapped);
+        $this->assertSame('ok', $run->outcome);
+        $this->assertSame([3, 3, 0, 0, 0, 0], [$run->seen, $run->new_count, $run->changed, $run->deactivated, $run->skipped, $run->unmapped]);
         $this->assertNull($run->error_code);
         $this->assertSame('manual', $run->trigger);
         $this->assertNotNull($run->finished_at);
-
         $this->assertSame(3, $this->active());
-        $row = DB::table('shipping_pickup_points')->where('external_ref', '2001')->first();
+
+        $row = DB::table('shipping_pickup_points')->where('external_ref', '2')->first();
         $this->assertSame('locker', $row->kind);
         $this->assertSame('apm', $row->courier_type);
-        $this->assertSame('Sofia', $row->settlement_name);
-        $this->assertSame('1000', $row->postcode);
-        $this->assertNull($row->settlement_id, 'COUR-1b maps settlements');
+        $this->assertSame('BOX NOW Sofia Lozenets', $row->name);
+        $this->assertSame('София', $row->settlement_name);
+        $this->assertSame('1421', $row->postcode);
+        $this->assertSame('{"state": "boxnow-ready"}', $row->features);
         $this->assertNotNull($row->first_seen_at);
         $this->assertNull($row->deactivated_at);
-        $this->assertEquals(42.6977, (float) $row->latitude);
+        $this->assertEquals(42.6741, (float) $row->latitude);
+
+        // Linked by postcode + name (Plovdiv, 4000) and by the one Sofia settlement (1421 is not in the postcode file).
+        $names = DB::table('shipping_pickup_points as p')->join('shipping_settlements as s', 's.id', '=', 'p.settlement_id')->orderBy('p.external_ref')->pluck('s.name', 'p.external_ref')->all();
+        $this->assertSame(['17' => 'Пловдив', '2' => 'София', '31' => 'Варна'], $names);
+    }
+
+    public function test_malformed_items_make_the_run_partial(): void
+    {
+        $this->enableBoxNow();
+        $items = json_decode($this->boxNowFixture(), true)['data'];
+        $items[] = ['type' => 'apm', 'name' => 'No id', 'addressLine1' => 'x', 'addressLine2' => 'София'];
+        $this->answer((string) json_encode(['data' => $items]));
+
+        $run = $this->sync();
+
+        $this->assertSame(['partial', 3, 1], [$run->outcome, $run->seen, $run->skipped]);
     }
 
     public function test_an_identical_second_sync_changes_nothing(): void
@@ -370,9 +382,18 @@ class PickupPointSyncTest extends TestCase
             static fn ($event): bool => str_contains((string) $event->command, 'couriers:sync'),
         ));
 
-        $this->assertCount(1, $events);
-        $this->assertSame('40 3 * * *', $events[0]->expression);
-        $this->assertTrue($events[0]->withoutOverlapping);
-        $this->assertStringNotContainsString('boxnow', (string) $events[0]->command, 'one entry for all enabled couriers; a disabled one is simply not queued by it');
+        $this->assertCount(2, $events);
+
+        $nightly = array_values(array_filter($events, static fn ($e): bool => ! str_contains((string) $e->command, '--settlements')));
+        $weekly = array_values(array_filter($events, static fn ($e): bool => str_contains((string) $e->command, '--settlements')));
+
+        $this->assertSame('40 3 * * *', $nightly[0]->expression);
+        $this->assertTrue($nightly[0]->withoutOverlapping);
+        $this->assertSame('0 4 * * 0', $weekly[0]->expression, 'Sunday 04:00, COUR-1b');
+        $this->assertTrue($weekly[0]->withoutOverlapping);
+
+        foreach ($events as $event) {
+            $this->assertStringNotContainsString('boxnow', (string) $event->command, 'one entry for all enabled couriers; a disabled one is simply not queued by it');
+        }
     }
 }

@@ -6,6 +6,9 @@ use App\Couriers\CourierDirectory;
 use App\Couriers\CourierSecretUnreadableException;
 use App\Couriers\CourierSettings;
 use App\Couriers\CourierSyncRun;
+use App\Couriers\Settlements\SettlementBuilder;
+use App\Couriers\Settlements\SettlementReport;
+use App\Couriers\Settlements\SettlementSyncer;
 use App\Couriers\SyncCourierPointsJob;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
@@ -127,7 +130,7 @@ class CouriersSettings extends Page
                     // A secret is NEVER filled into the form.
                     $data[$code][$environment->value][$field->name] = $field->isSecret()
                         ? null
-                        : $settings->get($vault->fieldKey($code, $field, $environment));
+                        : ($settings->get($vault->fieldKey($code, $field, $environment)) ?? $field->defaultFor($environment));
                 }
             }
         }
@@ -230,6 +233,7 @@ class CouriersSettings extends Page
             ->visible(fn (): bool => isset($this->connection[$code]));
 
         $components[] = Text::make(fn (): HtmlString => $this->lastRunHtml($code, $name));
+        $components[] = Text::make(fn (): HtmlString => $this->reportHtml($code));
         $components[] = Actions::make([
             Action::make("sync_{$code}")
                 ->label(__('couriers.sync.button'))
@@ -281,6 +285,7 @@ class CouriersSettings extends Page
         $settings = app(SiteSettingsRepository::class);
         $vault = app(CourierSettings::class);
         $journal = app(ActivityLogger::class);
+        $firstSyncs = [];
 
         foreach (app(CourierDirectory::class)->installed() as $descriptor) {
             $code = $descriptor->code();
@@ -308,6 +313,10 @@ class CouriersSettings extends Page
             if ($enabled && ! $wasEnabled) {
                 // The clock for «never synced yet» (CourierSyncStaleSource).
                 $settings->set($vault->key($code, CourierSettings::ENABLED_AT), (new DateTimeImmutable)->format('Y-m-d H:i:s'));
+                // First time on: its settlements and points are fetched at once (courier-integration-design.md §3.4), not tonight.
+                if (! app(SettlementSyncer::class)->hasRun($code)) {
+                    $firstSyncs[] = $code;
+                }
             }
 
             $environment = CourierEnvironment::fromStored(is_scalar($input['environment'] ?? null) ? (string) $input['environment'] : null);
@@ -337,6 +346,10 @@ class CouriersSettings extends Page
                     $write($key, $value);
                 }
             }
+        }
+
+        foreach ($firstSyncs as $code) {
+            SyncCourierPointsJob::dispatch($code, 'manual', true);
         }
 
         $this->dehydrate();
@@ -441,6 +454,34 @@ class CouriersSettings extends Page
         $text = __($key);
 
         return $text === $key ? __('couriers.errors.unknown_error') : $text;
+    }
+
+    /** The short settlement report: counts and a handful of names, derived on every render. */
+    private function reportHtml(string $code): HtmlString
+    {
+        $report = app(SettlementReport::class)->for($code);
+        $built = app(SiteSettingsRepository::class)->get(app(CourierSettings::class)->key($code, SettlementSyncer::SYNCED_AT));
+        $lines = ['<strong>'.e(__('couriers.report.heading')).'</strong>'];
+
+        if (! isset(SettlementBuilder::COLUMNS[$code])) {
+            $lines[] = e(__('couriers.report.no_settlements'));
+        }
+
+        $lines[] = e(__('couriers.report.line', ['mapped' => $report['mapped'], 'unmatched' => $report['unmatched'], 'splits' => $report['splits'], 'total' => $report['points_total'], 'unmapped' => $report['points_unmapped']]));
+
+        if ($report['unmatched_names'] !== []) {
+            $lines[] = e(__('couriers.report.unmatched_names', ['names' => implode(', ', $report['unmatched_names'])]));
+        }
+
+        if ($report['split_names'] !== []) {
+            $lines[] = e(__('couriers.report.split_names', ['names' => implode(', ', $report['split_names'])]));
+        }
+
+        $lines[] = e($built === null
+            ? __('couriers.report.never_built')
+            : __('couriers.report.built_at', ['when' => (new DateTimeImmutable($built, new \DateTimeZone('UTC')))->setTimezone(app(StoreTimezone::class)->zone())->format('Y-m-d H:i')]));
+
+        return new HtmlString(implode('<br>', $lines));
     }
 
     private function lastRunHtml(string $code, string $name): HtmlString

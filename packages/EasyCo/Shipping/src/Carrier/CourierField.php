@@ -24,6 +24,8 @@ final class CourierField
      * @param  string  $name  [a-z0-9_]
      * @param  string  $label  a lang key under `couriers.` (e.g. `boxnow.client_id`)
      * @param  list<string>  $hostSuffixes  HOST only: registrable domains the value must equal or sit under
+     * @param  array<string, string>  $defaults  environment value (`test` / `production`) => the value used while nothing is stored;
+     *                                           still checked like a stored one (a HOST default must be on the allowlist)
      */
     public function __construct(
         public readonly string $name,
@@ -32,6 +34,7 @@ final class CourierField
         public readonly bool $perEnvironment = true,
         public readonly int $max = 120,
         public readonly array $hostSuffixes = [],
+        public readonly array $defaults = [],
     ) {
         if (preg_match('/^[a-z0-9_]{1,40}$/D', $name) !== 1) {
             throw InvalidCarrierDataException::field(self::class, 'name', 'must be lowercase letters, digits and underscores');
@@ -44,6 +47,13 @@ final class CourierField
         if ($kind === self::HOST && $hostSuffixes === []) {
             throw InvalidCarrierDataException::field(self::class, 'hostSuffixes', 'a host field needs an allowlist');
         }
+    }
+
+    public function defaultFor(CourierEnvironment $environment): ?string
+    {
+        $value = $this->defaults[$environment->value] ?? null;
+
+        return $value === null || ($this->kind === self::HOST && $this->cleanHost($value) === null) ? null : $value;
     }
 
     public function isSecret(): bool

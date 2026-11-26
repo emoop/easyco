@@ -133,6 +133,16 @@ final class BgPostcodes
         return $names;
     }
 
+    /**
+     * Every postcode with its settlements, as the data file holds them (COUR-1b: the backbone the courier settlements are mapped onto).
+     *
+     * @return array<string, list<array{0: string, 1: string}>> postcode => list of [settlement (bg), region code]
+     */
+    public static function entries(): array
+    {
+        return self::postcodes();
+    }
+
     /** @return array<string, list<array{0: string, 1: string}>> */
     private static function postcodes(): array
     {

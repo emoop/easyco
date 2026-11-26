@@ -3,6 +3,7 @@
 namespace EasyCo\Shipping\Contracts;
 
 use EasyCo\Shipping\Carrier\CourierCredentials;
+use EasyCo\Shipping\Carrier\CourierSettlement;
 use EasyCo\Shipping\Carrier\PickupPointBatch;
 use EasyCo\Shipping\Exceptions\CourierHttpException;
 
@@ -23,7 +24,7 @@ interface PickupPointCatalogue
     /**
      * The courier's settlements (Speedy sites, Econt cities); BOX NOW returns an empty list.
      *
-     * @return list<array<string, mixed>>
+     * @return list<CourierSettlement>
      */
     public function settlements(CourierCredentials $credentials, string $countryCode): array;
 }

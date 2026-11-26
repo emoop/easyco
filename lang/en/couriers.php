@@ -86,6 +86,26 @@ return [
         ],
     ],
 
+    'report' => [
+        'heading' => 'Settlements and points',
+        'line' => 'Settlements matched: :mapped. Not matched (own rows): :unmatched. Split in two or more: :splits. Active points: :total, without a settlement: :unmapped.',
+        'unmatched_names' => 'Not matched: :names',
+        'split_names' => 'Split: :names',
+        'built_at' => 'Settlements last built: :when.',
+        'never_built' => 'The settlements have not been built yet. They are built with the first update and rebuilt every Sunday at 04:00.',
+        'no_settlements' => 'Points without a settlement of their own stay selectable under the name the courier gives them.',
+    ],
+
+    'econt' => [
+        'username' => 'User name (Econt)',
+        'password' => 'Password (Econt)',
+    ],
+
+    'speedy' => [
+        'username' => 'User name (Speedy)',
+        'password' => 'Password (Speedy)',
+    ],
+
     'boxnow' => [
         'api_host' => 'API address',
         'api_host_help' => 'The host name BOX NOW gave you with your credentials, for example api-….boxnow.bg. Only a host on boxnow.bg or boxnow.gr is accepted.',

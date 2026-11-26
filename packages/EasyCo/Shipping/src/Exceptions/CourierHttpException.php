@@ -26,8 +26,17 @@ final class CourierHttpException extends RuntimeException
 
     public const INVALID_REQUEST = 'invalid_request';
 
+    /** The call needs credentials that are not filled in. */
+    public const NOT_CONFIGURED = 'not_configured';
+
+    /** The courier refused the credentials. */
+    public const AUTH_FAILED = 'auth_failed';
+
     /** The courier answered, but not with what its contract says (e.g. a list that is not a list). */
     public const INVALID_RESPONSE = 'invalid_response';
+
+    /** A settlement list far shorter than the one in use (or empty): the build is refused and nothing is written. */
+    public const SETTLEMENTS_SHRANK = 'settlements_shrank';
 
     public function __construct(public readonly string $closedCode, public readonly ?int $httpStatus = null)
     {
