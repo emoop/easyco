@@ -57,3 +57,4 @@ Thumbs.db
 
 # review diffs in the project root (made by hand, never committed)
 /*.diff
+tests/Browser/out/

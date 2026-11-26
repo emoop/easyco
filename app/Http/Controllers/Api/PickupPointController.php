@@ -27,8 +27,9 @@ final class PickupPointController extends Controller
     public function settlements(Request $request): JsonResponse
     {
         $validator = Validator::make($request->query(), [
-            'carrier' => ['required', 'string', 'max:32', 'regex:/^[a-z0-9_-]+$/D'],
-            'kind' => ['required', 'string', 'in:'.implode(',', OfferablePickupPoints::KINDS)],
+            // the courier is needed for office / locker / pickup; `address` asks for every settlement and needs none
+            'carrier' => ['required_unless:kind,address', 'nullable', 'string', 'max:32', 'regex:/^[a-z0-9_-]+$/D'],
+            'kind' => ['required', 'string', 'in:'.implode(',', [...OfferablePickupPoints::KINDS, 'address'])],
             'q' => ['required', 'string', 'max:200'],
         ]);
 
@@ -40,7 +41,7 @@ final class PickupPointController extends Controller
         }
 
         try {
-            $found = $this->lists->settlements((string) $request->query('carrier'), (string) $request->query('kind'), $q);
+            $found = $this->lists->settlements(is_string($request->query('carrier')) ? $request->query('carrier') : null, (string) $request->query('kind'), $q);
         } catch (Throwable $e) {
             return $this->failed($e);
         }

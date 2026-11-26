@@ -31,6 +31,7 @@ class FakeNode {
 
     get id() { return this.attrs.id ?? ''; }
     get name() { return this.attrs.name ?? ''; }
+    get parentNode() { return this.parent; }
     get firstChild() { return this.children[0] ?? null; }
     get options() { return this.tag === 'select' ? this.children.filter((c) => c.tag === 'option') : undefined; }
     get value() {
@@ -180,6 +181,7 @@ let promoDelay = 0;
 let promoValid = true;
 // COUR-2a: the list picker's scripted answers (method 6 offers a list in the `picker_*` scenarios; one scenario's lists fail)
 const pickerFail = scenario === 'picker_falls_back_when_a_list_fails';
+const pointsFail = scenario === 'picker_points_list_fails';
 let checkoutResponse = { status: 201, data: { confirmation_url: 'http://shop.test/order/received/5?expires=1&signature=abc' } };
 // ACC-3c: who is signed in, and the account's saved addresses (the API's own shape; `is_default` marks the default).
 const signedIn = scenario.startsWith('acct_');
@@ -253,11 +255,14 @@ function quoteAll(body) {
         { id: 4, name: 'Econt office', courier: 'Еконт', delivery_type: 'office', destinations: { office: dest(preview, 4, 'office', 300) } },
         { id: 5, name: 'Econt locker', courier: 'Еконт', delivery_type: 'locker', destinations: { locker: dest(preview, 5, 'locker', 0) } },
         { id: 6, name: 'Speedy office', courier: 'Спиди', delivery_type: 'office', destinations: { office: dest(preview, 6, 'office', 350) }, integration: scenario.startsWith('picker_') ? { carrier: 'speedy', map: false } : null },
+        // COUR-2a.3: ONE method that serves address, office AND locker (scope ANY, no delivery type), with a list; only in the `picker_any_*` scenarios
+        ...(scenario.startsWith('picker_any') ? [{ id: 7, name: 'Omni delivery', courier: 'Омни', delivery_type: null, destinations: { address: dest(preview, 7, 'address', 600), office: dest(preview, 7, 'office', 400), locker: dest(preview, 7, 'locker', 300) }, integration: { carrier: 'speedy', map: false } }] : []),
         { id: 2, name: 'Local courier', courier: null, delivery_type: null, destinations: { address: dest(preview, 2, 'address', 700) } },
     ].filter((m) => ! dropped.includes(m.id));
     const groups = [
         { courier: 'Еконт', ids: [1, 4, 5], from: 0, destinations: ['address', 'office', 'locker'] },
         { courier: 'Спиди', ids: [6], from: 350, destinations: ['office'] },
+        ...(scenario.startsWith('picker_any') ? [{ courier: 'Омни', ids: [7], from: 300, destinations: ['address', 'office', 'locker'] }] : []),
         { courier: null, ids: [2], from: 700, destinations: ['address'] },
     ].map((g) => ({ courier: g.courier, methods: g.ids.filter((id) => ! dropped.includes(id)).map(String), from_minor: g.from, currency: 'EUR', destinations: g.destinations }))
         .filter((g) => g.methods.length > 0);
@@ -297,7 +302,7 @@ globalThis.fetch = async (path, init = {}) => {
         ] } };
     }
     if (method_ === 'GET' && path.startsWith('/api/shipping/pickup-points?')) {
-        result = { status: 200, data: { data: [
+        result = pointsFail ? { status: 500, data: null } : { status: 200, data: { data: [
             { id: 501, ref: 'S-1', kind: 'office', name: 'Офис Тракия', address: 'ул. Тракия 1', postcode: '4000', lat: null, lng: null },
             { id: 502, ref: 'S-2', kind: 'office', name: 'Офис Център', address: 'бул. Христо Ботев 2', postcode: '4000', lat: null, lng: null },
         ] } };
@@ -323,6 +328,11 @@ const kindOptions = () => kindSelect.children.map((o) => ({ value: o.attrs.value
 const quotePosts = () => calls.filter((c) => c.method === 'POST' && c.path === '/api/shipping/quote');
 const checkoutPosts = () => calls.filter((c) => c.path === '/api/checkout');
 const lastCheckout = () => checkoutPosts().at(-1);
+// COUR-2a.4: the one place field (the city input becomes a search) and the courier's list of offices
+const placeSearchRequests = () => calls.filter((c) => c.method === 'GET' && c.path.startsWith('/api/shipping/settlements'));
+const pointRequests = () => calls.filter((c) => c.method === 'GET' && c.path.startsWith('/api/shipping/pickup-points'));
+const placeOptions = () => form.elements.city.parent.querySelectorAll('[role="option"]');
+const pointRadios = () => q('[data-sf-picker]').querySelectorAll('input').filter((n) => n.attrs.type === 'radio');
 const from = (minor) => T('ck_from').replace(':price', minor === 0 ? T('ck_free') : fmt(minor));
 const status = () => q('[data-sf-quote-status]').textContent;
 const promoHost = () => q('[data-sf-promo]');
@@ -770,64 +780,72 @@ const scenarios = {
         assert.equal(courierRows()[1].radio.disabled, true);
     },
 
-    // COUR-2a: a method with a list shows the settlement search instead of the free-text field; keyboard choice, the points, one choice,
-    // the summary; the order carries OUR id and no typed text.
+    // COUR-2a.4: the owner's order. Courier and type first (from the preview quote), then ONE place field (a search over our settlements, by name or
+    // postcode), then the courier's offices of that place. The list has no place field of its own; the order carries OUR point id and no typed text.
     async picker_list_flow() {
-        await typeInto('city', 'Sofia');
-        choose(courierRows()[1].radio);
+        choose(courierRows()[1].radio);   // Speedy: one kind (office), a list; chosen BEFORE any place is typed
 
         const host = q('[data-sf-picker]');
-        const search = host.querySelector('[role="combobox"]');
+        const city = form.elements.city;
 
-        assert.equal(host.hidden, false, 'the list picker is shown');
-        assert.equal(q('[data-sf-pickup-manual]').hidden, true, 'the free-text field is not');
-        assert.equal(form.elements.pickup_point_address.required, false, 'the free-text field is not required while the list is used');
-        assert.equal(search.attrs['aria-expanded'], 'false');
-        assert.equal(placeOrder.disabled, true, 'no point yet');
-        assert.equal(search.attrs['aria-controls'], host.querySelector('[role="listbox"]').attrs.id);
+        assert.equal(host.hidden, false, 'the list area is shown for the chosen office');
+        assert.equal(q('[data-sf-pickup-manual]').hidden, true, 'the free-text office field is not');
+        assert.equal(form.elements.pickup_point_address.required, false);
+        assert.equal(city.attrs.role, 'combobox', 'the place is a search');
+        assert.equal(host.textContent.includes(T('ck_pick_choose_place')), true, 'the list asks for the place first');
+        assert.equal(placeSearchRequests().length, 0);
+        assert.equal(placeOrder.disabled, true, 'no place, no point yet');
 
-        fillContact();
-        search.value = 'п';
-        search.dispatch('input');
+        // typing quotes nothing (a half-typed name is no place); one character asks nothing
+        const quotesBefore = quotePosts().length;
+        city.value = 'п';
+        city.dispatch('input');
         await flush();
-        assert.equal(host.querySelectorAll('[role="option"]').length, 0, 'one character asks nothing');
-        assert.equal(calls.filter((c) => c.path.startsWith('/api/shipping/settlements')).length, 0);
-
-        search.value = 'пло';
-        search.dispatch('input');
+        assert.equal(placeSearchRequests().length, 0);
+        city.value = 'пло';
+        city.dispatch('input');
         await flush();
+        assert.equal(quotePosts().length, quotesBefore, 'no quote while typing the place');
+        assert.match(placeSearchRequests()[0].path, /kind=office&carrier=speedy&q=/, 'only places where this courier has offices');
 
-        const options = host.querySelectorAll('[role="option"]');
-        const request = calls.find((c) => c.path.startsWith('/api/shipping/settlements')).path;
+        const options = placeOptions();
 
-        assert.match(request, /carrier=speedy&kind=office&q=/);
         assert.equal(options.length, 2);
-        assert.equal(search.attrs['aria-expanded'], 'true');
         assert.ok(options[0].textContent.includes(T('ck_pick_region').replace(':region', 'Пловдив')), 'the oblast is in every suggestion');
+        assert.ok(options[0].textContent.includes('(4000)'), 'and the postcode');
         assert.ok(options[1].textContent.includes(T('ck_pick_region').replace(':region', 'Хасково')));
 
-        // keyboard: down, down, up, Enter chooses the first one; Enter never submits the form
+        // a postcode searches too
+        city.value = '4000';
+        city.dispatch('input');
+        await flush();
+        assert.match(placeSearchRequests().at(-1).path, /q=4000/);
+
+        // keyboard: down, down, up, Enter chooses the first; Enter never submits the form
         const key = (name) => {
             const event = { type: 'keydown', key: name, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
-            search.listeners.keydown.forEach((fn) => fn(event));
+            city.listeners.keydown.forEach((fn) => fn(event));
 
             return event;
         };
         key('ArrowDown');
         key('ArrowDown');
         key('ArrowUp');
-        assert.equal(search.attrs['aria-activedescendant'], options[0].attrs.id);
-        assert.equal(options[0].attrs['aria-selected'], 'true');
+        assert.equal(city.attrs['aria-activedescendant'], placeOptions()[0].attrs.id);
         assert.equal(key('Enter').defaultPrevented, true);
         await flush();
 
-        assert.equal(form.elements.city.value, 'Пловдив', 'the quote follows the chosen place');
-        assert.equal(quotePosts().at(-1).body.settlement, 'Пловдив');
-        assert.match(calls.find((c) => c.path.startsWith('/api/shipping/pickup-points')).path, /carrier=speedy&kind=office&settlement=77/);
+        assert.equal(city.value, 'Пловдив');
+        assert.equal(form.elements.postal_code.value, '4000', 'the postcode is filled once');
+        assert.equal(form.elements.region.value, 'Пловдив', 'and the region');
+        assert.equal(quotePosts().at(-1).body.settlement, 'Пловдив', 'the real quote runs for the chosen place');
+        assert.match(pointRequests().at(-1).path, /carrier=speedy&kind=office&settlement=77/);
 
-        const radios = host.querySelectorAll('input').filter((n) => n.attrs.type === 'radio');
+        const radios = pointRadios();
 
         assert.equal(radios.length, 2);
+        assert.equal(host.querySelectorAll('input').filter((n) => n.attrs.type === 'search' || n.attrs.role === 'combobox').length, 0, 'the list has no place field of its own');
+        fillContact();
         assert.equal(placeOrder.disabled, true, 'a place is not a point');
         radios[1].checked = true;
         radios[1].dispatch('change');
@@ -835,8 +853,14 @@ const scenarios = {
 
         assert.equal(form.elements.pickup_point_id.value, '502');
         assert.equal(placeOrder.disabled, false);
-        assert.equal(host.querySelector('[data-sf-picker-summary]').hidden, false);
         assert.ok(host.querySelector('[data-sf-picker-summary-text]').textContent.includes('Офис Център'));
+
+        // the quote that follows the choice leaves everything as it is (same place, same method, same destination)
+        await flush();
+        assert.equal(form.elements.pickup_point_id.value, '502', 'a re-quote keeps the office');
+        const requests = pointRequests().length;
+        await flush();
+        assert.equal(pointRequests().length, requests, 'no loop of requests');
 
         await submit();
 
@@ -850,19 +874,82 @@ const scenarios = {
         }
     },
 
-    // «Промени» drops the point and shows the list again; another courier or kind drops it for good.
+    // ONE method that serves every destination (scope ANY, no delivery type): the kind is the destination the CUSTOMER chose. The place is kept when
+    // the courier or the type changes; the office is dropped; the free-text and required rules follow the same path.
+    async picker_any_method_follows_the_chosen_destination() {
+        const omni = courierRows().find((r) => r.text.startsWith('Омни'));
+        const host = q('[data-sf-picker]');
+        const city = form.elements.city;
+
+        choose(omni.radio);
+        assert.equal(host.hidden, true, 'no destination chosen yet');
+        chooseKind('7:address');
+        assert.equal(host.hidden, true);
+        assert.equal(city.attrs.role, 'combobox', 'a street address chooses its place from ALL settlements too');
+
+        city.value = 'пло';
+        city.dispatch('input');
+        await flush();
+        assert.match(placeSearchRequests().at(-1).path, /kind=address&q=/);
+        assert.doesNotMatch(placeSearchRequests().at(-1).path, /carrier=/, 'every settlement, no courier');
+        placeOptions()[0].dispatch('mousedown');
+        await flush();
+        assert.equal(form.elements.postal_code.value, '4000', 'the postcode is prefilled for the street address ...');
+        form.elements.postal_code.value = '4001';
+        assert.equal(form.elements.postal_code.value, '4001', '... and stays editable');
+        assert.equal(form.elements.address_line_1.required, true);
+
+        // address -> office: the same place, the list of that place
+        chooseKind('7:office');
+        await flush();
+        assert.equal(host.hidden, false);
+        assert.equal(city.value, 'Пловдив', 'the place is kept');
+        assert.equal(form.elements.pickup_point_address.required, false);
+        assert.match(pointRequests().at(-1).path, /kind=office&settlement=77/);
+        pointRadios()[0].checked = true;
+        pointRadios()[0].dispatch('change');
+        assert.equal(form.elements.pickup_point_id.value, '501');
+
+        // office -> locker: the office is dropped, the place is kept, the list is the locker list
+        chooseKind('7:locker');
+        await flush();
+        assert.equal(form.elements.pickup_point_id.value, '', 'a point is for ONE destination');
+        assert.equal(city.value, 'Пловдив');
+        assert.match(pointRequests().at(-1).path, /kind=locker&settlement=77/);
+        assert.equal(pointRadios().length, 2);
+
+        // locker -> address -> office again
+        chooseKind('7:address');
+        assert.equal(host.hidden, true);
+        assert.equal(q('[data-sf-pickup-fields]').hidden, true);
+        assert.equal(form.elements.pickup_point_address.required, false);
+        assert.equal(form.elements.address_line_1.required, true);
+        chooseKind('7:office');
+        await flush();
+        assert.equal(host.hidden, false);
+        assert.equal(form.elements.pickup_point_id.value, '');
+        assert.equal(pointRadios().length, 2, 'the place is kept, so the list is back');
+
+        // a new place drops the office
+        pointRadios()[1].checked = true;
+        pointRadios()[1].dispatch('change');
+        assert.equal(form.elements.pickup_point_id.value, '502');
+        city.value = 'Хас';
+        city.dispatch('input');
+        assert.equal(form.elements.pickup_point_id.value, '', 'changing the place drops the office');
+    },
+
+    // «Промени» drops the point and shows the list again; another courier drops it for good (the place stays).
     async picker_change_and_switching_drop_the_point() {
-        await typeInto('city', 'Sofia');
         choose(courierRows()[1].radio);
 
         const host = q('[data-sf-picker]');
-        const search = host.querySelector('[role="combobox"]');
-        const pointRadios = () => host.querySelectorAll('input').filter((n) => n.attrs.type === 'radio');
+        const city = form.elements.city;
 
-        search.value = 'пло';
-        search.dispatch('input');
+        city.value = 'пло';
+        city.dispatch('input');
         await flush();
-        host.querySelectorAll('[role="option"]')[0].dispatch('mousedown');
+        placeOptions()[0].dispatch('mousedown');
         await flush();
         pointRadios()[0].checked = true;
         pointRadios()[0].dispatch('change');
@@ -880,30 +967,35 @@ const scenarios = {
         chooseKind('4:office');
         assert.equal(host.hidden, true, 'a method without a list shows none');
         assert.equal(q('[data-sf-pickup-manual]').hidden, false);
+        assert.equal(city.value, 'Пловдив', 'the place stays');
 
         choose(courierRows()[1].radio);
+        await flush();
         assert.equal(host.hidden, false);
         assert.equal(form.elements.pickup_point_id.value, '', 'the old point is gone');
+        assert.equal(pointRadios().length, 2, 'and the list of the kept place is back');
     },
 
-    // A list that fails to load never blocks the order: the free-text field takes over, and the order says so.
+    // The place list fails to load: the place is a plain text field again, the office is typed too, and the order says so.
     async picker_falls_back_when_a_list_fails() {
-        await typeInto('city', 'Sofia');
         choose(courierRows()[1].radio);
 
-        const host = q('[data-sf-picker]');
-        const search = host.querySelector('[role="combobox"]');
+        const city = form.elements.city;
 
         fillContact();
-        search.value = 'пло';
-        search.dispatch('input');
+        city.value = 'пло';
+        city.dispatch('input');
         await flush();
 
-        assert.equal(q('[data-sf-pickup-manual]').hidden, false, 'the free-text field is back');
-        assert.equal(q('[data-sf-pickup-note]').hidden, false);
-        assert.equal(q('[data-sf-pickup-note]').textContent, T('ck_pick_failed'));
+        assert.equal(city.attrs.role, undefined, 'the place is a plain text field again');
+        assert.equal(q('[data-sf-pickup-manual]').hidden, false, 'the free-text office field is back');
         assert.equal(form.elements.pickup_point_address.required, true);
-        assert.equal(placeOrder.disabled, true, 'still needs the typed address');
+        assert.equal(placeOrder.disabled, true);
+
+        // typing quotes as it always did
+        const before = quotePosts().length;
+        await typeInto('city', 'Sofia');
+        assert.equal(quotePosts().length > before, true);
 
         fillPoint('S-9');
         assert.equal(placeOrder.disabled, false);
@@ -913,23 +1005,74 @@ const scenarios = {
 
         assert.equal(body.pickup_point_address, 'S-9 Main St');
         assert.equal(body.pickup_point_manual, true);
+        assert.equal(body.settlement, 'Sofia');
         assert.equal('pickup_point_id' in body, false);
+    },
+
+    // «Не намирам населеното си място» keeps today's free-text place; the list cannot know it, so the office is typed.
+    async picker_place_not_found_keeps_the_free_text_place() {
+        choose(courierRows()[1].radio);
+
+        const city = form.elements.city;
+        const manualButton = city.parent.querySelectorAll('button').find((b) => b.textContent === T('ck_place_manual'));
+
+        assert.equal(manualButton.hidden, false);
+        manualButton.dispatch('click');
+        await flush();
+
+        assert.equal(city.attrs.role, undefined);
+        assert.equal(q('[data-sf-pickup-manual]').hidden, false);
+        await typeInto('city', 'Нейкое село');
+        fillContact();
+        fillPoint('S-3');
+        await submit();
+
+        const body = lastCheckout().body;
+
+        assert.equal(body.settlement, 'Нейкое село');
+        assert.equal(body.pickup_point_manual, true);
+        assert.equal(body.pickup_point_address, 'S-3 Main St');
+
+        // and back to the search
+        const back = city.parent.querySelectorAll('button').find((b) => b.textContent === T('ck_place_back'));
+        back.dispatch('click');
+        assert.equal(city.attrs.role, 'combobox');
+    },
+
+    // The places load but the OFFICES of the chosen place do not: free text for the office only.
+    async picker_points_list_fails() {
+        choose(courierRows()[1].radio);
+
+        const city = form.elements.city;
+
+        city.value = 'пло';
+        city.dispatch('input');
+        await flush();
+        placeOptions()[0].dispatch('mousedown');
+        await flush();
+
+        assert.equal(city.attrs.role, 'combobox', 'the place search still works');
+        assert.equal(q('[data-sf-pickup-manual]').hidden, false);
+        assert.equal(q('[data-sf-pickup-note]').textContent, T('ck_pick_failed'));
+        fillContact();
+        fillPoint('S-4');
+        await submit();
+        assert.equal(lastCheckout().body.pickup_point_manual, true);
+        assert.equal(lastCheckout().body.settlement, 'Пловдив');
     },
 
     // The server says the chosen point is gone: the point is dropped, the list is shown again, nothing is lost.
     async picker_server_refusal_drops_the_point() {
-        await typeInto('city', 'Sofia');
         choose(courierRows()[1].radio);
         fillContact();
 
         const host = q('[data-sf-picker]');
-        const search = host.querySelector('[role="combobox"]');
-        const pointRadios = () => host.querySelectorAll('input').filter((n) => n.attrs.type === 'radio');
+        const city = form.elements.city;
 
-        search.value = 'пло';
-        search.dispatch('input');
+        city.value = 'пло';
+        city.dispatch('input');
         await flush();
-        host.querySelectorAll('[role="option"]')[0].dispatch('mousedown');
+        placeOptions()[0].dispatch('mousedown');
         await flush();
         pointRadios()[0].checked = true;
         pointRadios()[0].dispatch('change');
@@ -943,6 +1086,7 @@ const scenarios = {
         assert.equal(host.querySelector('[data-sf-error-for="pickup_point_id"]').textContent, 'Gone');
         assert.equal(placeOrder.disabled, true, 'a new point is needed');
         assert.equal(pointRadios().length, 2, 'the list is shown again');
+        assert.equal(city.value, 'Пловдив', 'the place is kept');
         assert.equal(form.elements.recipient_first_name.value, 'Ana', 'what was typed is kept');
     },
 

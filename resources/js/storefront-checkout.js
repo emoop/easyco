@@ -16,6 +16,7 @@
 // KIND from a native <select> ("To an office - 3.00 EUR"). Switching among already-quoted options needs no new request.
 import { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, promotionBox, setCount, t } from './storefront-cart.js';
 import { createPickupPicker } from './storefront-pickup-picker.js';
+import { createPlaceSearch } from './storefront-place-search.js';
 
 var DEBOUNCE_MS = 500;
 var STREET_FIELDS = ['postal_code', 'address_line_1', 'address_line_2'];
@@ -1285,6 +1286,7 @@ function initCheckout(root) {
         pickupBox.hidden = ! pickup;
 
         setRequired('address_line_1', street);
+        syncPlace();
         PICKUP_FIELDS.forEach(function (name) {
             setRequired(name, pickup);
         });
@@ -1313,16 +1315,6 @@ function initCheckout(root) {
             onChange: function () {
                 clearFieldError('pickup_point_id');
                 refreshPlaceOrder();
-            },
-            // the settlement the customer picked is the place the delivery is quoted for: the quote follows it like it follows a typed place
-            onSettlement: function (name) {
-                var city = form.elements.city;
-
-                if (city && city.value.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
-                    city.value = name;
-                    savedAuto = false;
-                    scheduleQuote(false);
-                }
             },
             onManual: function (on, note) {
                 pickupManual.hidden = ! on;
@@ -1355,9 +1347,58 @@ function initCheckout(root) {
         var pickup = isPickupKind(deliveryKind());
         var integration = pickup && selection !== null ? selection.integration : null;
 
-        picker.configure(integration, pickup ? deliveryKind() : null, selection === null ? '' : selection.id + ':' + selection.kind, fieldValue('city'));
+        picker.configure(integration, pickup ? deliveryKind() : null, selection === null ? '' : selection.id + ':' + selection.kind);
+        // the place is chosen ONCE, in the page's place field: the list only receives it (the same place changes nothing)
+        picker.setSettlement(! placeSearch ? null : placeSearch.chosen());
         pickupManual.hidden = picker.available() && picker.active();
         setRequired('pickup_point_address', pickup && ! pickerOn());
+    }
+
+    // ------------------------------------------------------------------------------------------ the one place field (COUR-2a.4)
+
+    var anyIntegration = false;  // the last quote has at least one method with a courier list: only then (and only for BG) the place is a search
+    var placeSearch = createPlaceSearch(form.elements.city, {
+        // a suggestion was chosen: city, region and postcode are filled ONCE, then the real quote runs for that place
+        onChoose: function (item) {
+            form.elements.city.value = item.name;
+            form.elements.postal_code.value = item.postcode || '';
+            form.elements.region.value = item.region || '';
+            savedAuto = false;
+            clearFieldError('city');
+
+            if (picker !== null) {
+                picker.setSettlement(item);
+            }
+
+            applyRegionMode();
+            scheduleQuote(true);
+        },
+        // the text was typed over: the chosen place is gone, and so is the office chosen in it
+        onCleared: function () {
+            if (picker !== null) {
+                picker.setSettlement(null);
+            }
+        },
+        // «Не намирам населеното си място»: today's text field; the office list cannot know the place either, so the free-text office field is used
+        onManual: function (on) {
+            if (on && picker !== null) {
+                picker.useFreeText();
+            }
+
+            scheduleQuote(true);
+        },
+    });
+
+    /** Is the city a search (BG, and the shop has courier lists)? Called whenever the destination or the quote changes. */
+    function syncPlace() {
+        if (! placeSearch) {
+            return;
+        }
+
+        var pickup = isPickupKind(deliveryKind());
+        var integration = pickup && selection !== null ? selection.integration : null;
+
+        placeSearch.configure(fieldValue('country') === 'BG' && anyIntegration, integration, integration !== null ? deliveryKind() : 'address');
     }
 
     /** The ONE request: every kind of every courier. No place yet = a preview; the pick-up kind is never sent with `all`. */
@@ -1745,6 +1786,9 @@ function initCheckout(root) {
         var previousKind = preferredKind;
 
         quote = data;
+        anyIntegration = (data.methods || []).some(function (method) {
+            return method.integration && typeof method.integration.carrier === 'string';
+        });
         quotePending = false;
         selection = null;
         chosenCourier = null;
@@ -2097,7 +2141,10 @@ function initCheckout(root) {
                 applyRegionMode();
             }
 
-            scheduleQuote(false);
+            // COUR-2a.4: while the city is a search it quotes when a suggestion is CHOSEN, not on every keystroke (a half-typed name is no place)
+            if (! (name === 'city' && placeSearch && placeSearch.engaged())) {
+                scheduleQuote(false);
+            }
         };
 
         form.elements[name].addEventListener('input', onMove);
