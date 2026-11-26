@@ -17,17 +17,18 @@ use EasyCo\Shipping\Exceptions\InvalidCarrierDataException;
  * BOX NOW's parcel lockers, from the public locker list (courier-integration-design.md §7.1: `GET /v1/apms_bg-BG.json` on the
  * list host of the credentials' environment; no credentials are sent). Every item is a LOCKER.
  *
- * FIELD NAMES ARE NOT CONFIRMED against a live response (see the COUR-1a report): this reads the shape BOX NOW's partner
- * documentation and its public location files are known for, and the test fixture was built from that shape, not recorded
- * live. The assumptions, in one place:
- *   root            `{"data": [...]}` or a bare list (both accepted)
- *   id              `id` (string or int)                      -> reference (the locker id the delivery-request API takes)
- *   type            `type`; only "apm" is a locker; any other explicit type (e.g. a pseudo "any-apm") is skipped as malformed
- *   name            `title`, else `name`
- *   address         `addressLine1` (required); `addressLine2` usually holds postcode and city
- *   postcode        `postalCode`, else the digits of `addressLine2`
- *   settlement      `city` / `town` if present, else the non-digit part of `addressLine2`; none -> the item is skipped
- *   coordinates     `lat`, `lng` (string or number); an invalid or half pair is dropped, the locker is kept
+ * THE SHAPE IS CONFIRMED (P: the list was read live by the architect on 2026-11-26, ~450 KB, root `{"data": [...]}`). Each item:
+ *   id              string or int                          -> reference (the locker id the delivery-request API takes)
+ *   type            "apm"; any other explicit type is skipped as malformed (none seen in the live list)
+ *   name            the display name; `title` is the fallback (the other integrations of this list read `name`)
+ *   addressLine1    street and number (required)
+ *   addressLine2    THE CITY NAME ONLY (e.g. «София»)       -> settlement; the non-digit part of the text is the fallback if a
+ *                   value ever carries a postcode; `city` / `town` are read only as a last resort (the live list has no such field)
+ *   postalCode      postcode
+ *   lat, lng        STRINGS; an invalid or half pair is dropped, the locker is kept
+ *   state           "boxnow-ready" or "only-delivery". BOTH can receive a delivery, so neither is skipped; the value is kept in
+ *                   `features.state` (the table's JSON column) for later use
+ *   country, region, image, note, expectedDeliveryTime: not used here
  * A locker that cannot be built is SKIPPED AND COUNTED, never fatal. A response that is not a list throws INVALID_RESPONSE.
  */
 final class BoxNowCatalogue implements PickupPointCatalogue
@@ -104,7 +105,7 @@ final class BoxNowCatalogue implements PickupPointCatalogue
             return null;
         }
 
-        $name = $this->text($item['title'] ?? null) ?? $this->text($item['name'] ?? null);
+        $name = $this->text($item['name'] ?? null) ?? $this->text($item['title'] ?? null);
         $address = $this->text($item['addressLine1'] ?? null);
         $line2 = $this->text($item['addressLine2'] ?? null);
         $postcode = $this->text($item['postalCode'] ?? null);
@@ -113,11 +114,9 @@ final class BoxNowCatalogue implements PickupPointCatalogue
             $postcode = $m[1];
         }
 
-        $settlement = $this->text($item['city'] ?? null) ?? $this->text($item['town'] ?? null);
-
-        if ($settlement === null && $line2 !== null) {
-            $settlement = $this->text(trim(preg_replace('/[\d,]+/u', ' ', $line2) ?? '', " \t,-"));
-        }
+        // addressLine2 is the city name only; stripping digits and commas is a fallback for a value that ever carries a postcode too.
+        $settlement = $line2 !== null ? $this->text(trim(preg_replace('/[\d,]+/u', ' ', $line2) ?? '', " \t,-")) : null;
+        $settlement ??= $this->text($item['city'] ?? null) ?? $this->text($item['town'] ?? null);
 
         if ($name === null || $address === null || $settlement === null) {
             return null;
@@ -138,6 +137,7 @@ final class BoxNowCatalogue implements PickupPointCatalogue
                 latitude: $latitude,
                 longitude: $longitude,
                 courierType: 'apm',
+                features: $this->text($item['state'] ?? null) !== null ? ['state' => $this->text($item['state'])] : [],
             );
         } catch (InvalidCarrierDataException) {
             return null;

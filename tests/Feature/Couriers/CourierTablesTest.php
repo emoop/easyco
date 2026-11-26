@@ -54,7 +54,17 @@ class CourierTablesTest extends TestCase
             $this->assertStringContainsString($expected, $sql);
         }
 
-        $this->assertStringNotContainsString('FOREIGN KEY', $sql, 'settlement_id gets its FK in COUR-1b, with shipping_settlements');
+        // COUR-1b: the courier's own settlement id, its index, and the foreign key COUR-1a left for here (restricting: no ON DELETE).
+        foreach ([
+            '`settlement_id` bigint unsigned DEFAULT NULL',
+            '`courier_settlement_ref` varchar(32)',
+            'KEY `spp_settlement_ref_idx` (`carrier_code`,`courier_settlement_ref`)',
+            'CONSTRAINT `spp_settlement_fk` FOREIGN KEY (`settlement_id`) REFERENCES `shipping_settlements` (`id`)',
+        ] as $expected) {
+            $this->assertStringContainsString($expected, $sql);
+        }
+
+        $this->assertStringNotContainsString('ON DELETE', $sql);
     }
 
     public function test_the_database_itself_refuses_a_second_row_for_one_courier_point_and_a_bad_kind(): void

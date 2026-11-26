@@ -17,10 +17,10 @@ use EasyCo\Shipping\Exceptions\CourierHttpException;
  *
  * HOSTS. Two kinds:
  *  - the PUBLIC LOCKER LIST host, fixed per environment (design §7.1: `locationapi-production.boxnow.bg` / `locationapi-stage.boxnow.bg`);
- *  - the API HOST (`auth-sessions` and, from COUR-3a, vouchers): NOT CONFIRMED from the repo or BOX NOW's public pages, so it is a
- *    per-environment value the merchant enters on the settings page (BOX NOW sends it with the credentials), and it is accepted ONLY
- *    if it is a bare hostname on or under `boxnow.bg` / `boxnow.gr` (a fixed allowlist, checked on save and again on every read).
- *    Nothing is guessed: with no API host entered, the connection test says `api_host_missing` and no request is made.
+ *  - the API HOST (`auth-sessions` and, from COUR-3a, vouchers): a per-environment value on the settings page, accepted ONLY if it
+ *    is a bare hostname on or under `boxnow.bg` / `boxnow.gr` (a fixed allowlist, checked on save and again on every read). It is
+ *    PRE-FILLED with `api-production.boxnow.bg` / `api-stage.boxnow.bg` (P: observed in a second independent implementation, not
+ *    in BOX NOW's own public pages) and stays editable, so the connection test does not start with `api_host_missing`.
  *
  * No setting is read here and no facade is used: the application hands over the stored values.
  */
@@ -30,6 +30,12 @@ final class BoxNowDescriptor implements CourierDescriptor
 
     /** The fixed list of BOX NOW domains an API host may be on. */
     public const API_HOST_DOMAINS = ['boxnow.bg', 'boxnow.gr'];
+
+    /** P: the API hosts a second independent integration uses; pre-filled per environment, editable within the allowlist above. */
+    public const API_HOST_DEFAULTS = [
+        'production' => 'api-production.boxnow.bg',
+        'test' => 'api-stage.boxnow.bg',
+    ];
 
     public const LIST_HOSTS = [
         'production' => 'locationapi-production.boxnow.bg',
@@ -44,7 +50,7 @@ final class BoxNowDescriptor implements CourierDescriptor
     public function fields(): array
     {
         return [
-            new CourierField('api_host', 'boxnow.api_host', CourierField::HOST, true, 100, self::API_HOST_DOMAINS),
+            new CourierField('api_host', 'boxnow.api_host', CourierField::HOST, true, 100, self::API_HOST_DOMAINS, self::API_HOST_DEFAULTS),
             new CourierField('partner_id', 'boxnow.partner_id', CourierField::TEXT, true, 60),
             new CourierField('client_id', 'boxnow.client_id', CourierField::TEXT, true, 120),
             new CourierField('client_secret', 'boxnow.client_secret', CourierField::SECRET, true, 200),

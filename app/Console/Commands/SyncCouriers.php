@@ -14,7 +14,7 @@ use Illuminate\Console\Command;
  */
 class SyncCouriers extends Command
 {
-    protected $signature = 'couriers:sync {carrier? : a courier code, e.g. boxnow} {--now : run here instead of queueing}';
+    protected $signature = 'couriers:sync {carrier? : a courier code, e.g. boxnow} {--now : run here instead of queueing} {--settlements : rebuild the courier settlements first}';
 
     protected $description = 'Refresh the local list of courier pickup points (enabled couriers only)';
 
@@ -35,10 +35,10 @@ class SyncCouriers extends Command
         }
 
         foreach ($codes as $carrier) {
-            $job = new SyncCourierPointsJob($carrier, $code === null ? 'schedule' : 'cli');
+            $job = new SyncCourierPointsJob($carrier, $code === null ? 'schedule' : 'cli', (bool) $this->option('settlements'));
 
             if ($this->option('now')) {
-                SyncCourierPointsJob::dispatchSync($carrier, $job->trigger);
+                SyncCourierPointsJob::dispatchSync($carrier, $job->trigger, $job->withSettlements);
             } else {
                 dispatch($job);
             }

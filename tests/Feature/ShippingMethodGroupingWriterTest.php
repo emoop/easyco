@@ -96,7 +96,7 @@ class ShippingMethodGroupingWriterTest extends TestCase
         }
 
         $free = $this->writer()->create($this->zoneId, $this->input(['name' => 'Free', 'kind' => 'free', 'price' => null, 'courier' => 'Econt', 'deliveryType' => 'locker']));
-        $carrier = $this->writer()->create($this->zoneId, $this->input(['name' => 'Carrier', 'kind' => 'carrier', 'price' => null, 'carrierCode' => 'econt', 'courier' => 'Econt', 'deliveryType' => 'office']));
+        $carrier = $this->writer()->create($this->zoneId, $this->input(['name' => 'Carrier', 'kind' => 'carrier', 'price' => null, 'carrierCode' => 'acme', 'courier' => 'Econt', 'deliveryType' => 'office']));
 
         $this->assertSame('Econt', $free->courier());
         $this->assertSame([ 'Econt', ShippingDeliveryType::OFFICE], [$carrier->courier(), $carrier->deliveryType()]);

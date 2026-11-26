@@ -1,0 +1,42 @@
+{
+    "offices": [
+        {
+            "id": 1101,
+            "code": "1101",
+            "isMPS": false,
+            "isAPS": false,
+            "name": "София Младост 1",
+            "nameEn": "Sofia Mladost 1",
+            "address": {
+                "city": {"id": 41, "name": "София", "nameEn": "Sofia", "postCode": "1000", "regionName": "София (столица)"},
+                "fullAddress": "ж.к. Младост 1, бл. 7",
+                "location": {"latitude": 42.6501, "longitude": 23.3792, "confidence": 1}
+            }
+        },
+        {
+            "id": 9001,
+            "code": "9001",
+            "isMPS": false,
+            "isAPS": true,
+            "name": "Еконтомат София Център",
+            "address": {
+                "city": {"id": 41, "name": "София", "postCode": "1000"},
+                "street": "ул. Граф Игнатиев",
+                "num": "12",
+                "location": {"latitude": "42.6903", "longitude": "23.3254"}
+            }
+        },
+        {
+            "id": 4001,
+            "code": "4001",
+            "isMPS": true,
+            "isAPS": false,
+            "name": "Пловдив Тракия",
+            "address": {
+                "city": {"id": 25, "name": "Пловдив", "postCode": "4000", "regionName": "Пловдив"},
+                "fullAddress": "бул. Марица 100",
+                "location": {"latitude": 0, "longitude": 0}
+            }
+        }
+    ]
+}

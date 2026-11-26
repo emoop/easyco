@@ -1,63 +1,54 @@
 {
     "data": [
         {
-            "id": "2001",
+            "id": "2",
             "type": "apm",
-            "name": "APM-2001",
-            "title": "BOX NOW Test Mall Sofia",
-            "image": "https://example.invalid/2001.jpg",
-            "lat": "42.697700",
-            "lng": "23.321900",
-            "addressLine1": "Test Blvd 1",
-            "addressLine2": "1000, Sofia",
-            "postalCode": "1000",
+            "name": "BOX NOW Sofia Lozenets",
+            "title": "BOX NOW Sofia Lozenets (title)",
+            "image": "https://locationapi-production.boxnow.bg/images/2.jpg",
+            "lat": "42.6741000",
+            "lng": "23.3195000",
+            "addressLine1": "bul. Cherni vrah 47",
+            "addressLine2": "София",
+            "postalCode": "1421",
             "country": "BG",
-            "note": "Next to the main entrance"
+            "note": "Inside the car park, next to the entrance",
+            "region": "bg-BG",
+            "state": "boxnow-ready",
+            "expectedDeliveryTime": "1-2 дни"
         },
         {
-            "id": 2002,
+            "id": "17",
             "type": "apm",
-            "name": "BOX NOW Plovdiv Test",
-            "lat": 42.1354,
-            "lng": 24.7453,
-            "addressLine1": "Test Street 22",
-            "addressLine2": "4000 Plovdiv"
+            "title": "BOX NOW Plovdiv Center",
+            "name": "BOX NOW Plovdiv Center",
+            "image": "https://locationapi-production.boxnow.bg/images/17.jpg",
+            "lat": "42.1450000",
+            "lng": "24.7510000",
+            "addressLine1": "ul. Knyaz Aleksandar I 22",
+            "addressLine2": "Пловдив",
+            "postalCode": "4000",
+            "country": "BG",
+            "note": "",
+            "region": "bg-BG",
+            "state": "only-delivery",
+            "expectedDeliveryTime": "1-2 дни"
         },
         {
-            "id": "2003",
+            "id": "31",
             "type": "apm",
-            "title": "BOX NOW Varna Test",
-            "lat": "not-a-number",
-            "lng": "27.9147",
-            "addressLine1": "Test Alley 3",
-            "city": "Varna",
-            "postalCode": "9000"
-        },
-        {
-            "type": "apm",
-            "title": "No id at all",
-            "addressLine1": "Test Street 4",
-            "addressLine2": "1000 Sofia"
-        },
-        {
-            "id": "2005",
-            "type": "any-apm",
-            "title": "Any locker",
-            "addressLine1": "-",
-            "addressLine2": "1000 Sofia"
-        },
-        {
-            "id": "2006",
-            "type": "apm",
-            "title": "No address",
-            "addressLine2": "1000 Sofia"
-        },
-        {
-            "id": "bad id!",
-            "type": "apm",
-            "title": "Unsafe id",
-            "addressLine1": "Test Street 7",
-            "addressLine2": "1000 Sofia"
+            "title": "BOX NOW Varna Mall",
+            "image": "",
+            "lat": "43.2141000",
+            "lng": "27.9147000",
+            "addressLine1": "bul. Vladislav Varnenchik 186",
+            "addressLine2": "Варна",
+            "postalCode": "9000",
+            "country": "BG",
+            "note": "",
+            "region": "bg-BG",
+            "state": "boxnow-ready",
+            "expectedDeliveryTime": "1-2 дни"
         }
     ]
 }

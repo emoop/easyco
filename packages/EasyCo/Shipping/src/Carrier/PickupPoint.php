@@ -53,6 +53,13 @@ final class PickupPoint
         CarrierValue::nonEmpty($class, 'settlement', $settlement);
         CarrierValue::nonEmpty($class, 'addressLine', $addressLine);
 
+        if ($courierSettlementRef !== null) {
+            // Digits only (1 to 18): the sync joins it with CAST(... AS UNSIGNED), which must never meet anything else.
+            if (preg_match('/^\d{1,18}$/D', $courierSettlementRef) !== 1) {
+                throw InvalidCarrierDataException::field($class, 'courierSettlementRef', 'must be 1 to 18 digits');
+            }
+        }
+
         if ($latitude !== null && ($latitude < -90.0 || $latitude > 90.0)) {
             throw InvalidCarrierDataException::field($class, 'latitude', 'must be between -90 and 90');
         }

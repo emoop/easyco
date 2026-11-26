@@ -1,0 +1,9 @@
+{
+    "cities": [
+        {"id": 41, "name": "София", "nameEn": "Sofia", "postCode": "1000", "regionName": "София (столица)"},
+        {"id": 25, "name": "Пловдив", "nameEn": "Plovdiv", "postCode": "4000", "regionName": "Пловдив"},
+        {"id": 700, "name": "Костинброд", "postCode": "2230", "regionName": "София"},
+        {"id": "not-a-number", "name": "Broken"},
+        {"id": 701}
+    ]
+}

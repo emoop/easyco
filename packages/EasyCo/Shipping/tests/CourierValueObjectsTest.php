@@ -9,7 +9,9 @@ use EasyCo\Shipping\Carrier\ConnectionCheck;
 use EasyCo\Shipping\Carrier\CourierCredentials;
 use EasyCo\Shipping\Carrier\CourierEnvironment;
 use EasyCo\Shipping\Carrier\CourierField;
+use EasyCo\Shipping\Carrier\CourierRedactor;
 use EasyCo\Shipping\Carrier\CourierResponse;
+use EasyCo\Shipping\Carrier\CourierSettlement;
 use EasyCo\Shipping\Carrier\HttpCall;
 use EasyCo\Shipping\Carrier\PickupPoint;
 use EasyCo\Shipping\Carrier\PickupPointKind;
@@ -127,6 +129,49 @@ final class CourierValueObjectsTest extends TestCase
             try {
                 new PickupPoint('boxnow', 'L1', 'Locker', 'BG', 'Sofia', 'Street 1', PickupPointKind::LOCKER, null, $lat, $lng);
                 $this->fail('bad coordinates must be refused');
+            } catch (InvalidCarrierDataException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function test_the_redactor_removes_credentials_at_any_depth_and_keeps_the_rest(): void
+    {
+        $out = CourierRedactor::redact(['userName' => 'u', 'PASSWORD' => 'p', 'a' => ['client_secret' => 's', 'x' => ['Authorization' => 'Bearer t', 'access_token' => 't', 'keep' => 1]], 'list' => [['password' => 'p', 'id' => 5]]]);
+
+        $this->assertSame(CourierRedactor::MASK, $out['userName']);
+        $this->assertSame(CourierRedactor::MASK, $out['PASSWORD']);
+        $this->assertSame(CourierRedactor::MASK, $out['a']['client_secret']);
+        $this->assertSame(CourierRedactor::MASK, $out['a']['x']['Authorization']);
+        $this->assertSame(CourierRedactor::MASK, $out['a']['x']['access_token']);
+        $this->assertSame(1, $out['a']['x']['keep']);
+        $this->assertSame(CourierRedactor::MASK, $out['list'][0]['password']);
+        $this->assertSame(5, $out['list'][0]['id']);
+    }
+
+    public function test_a_courier_settlement_and_the_settlement_ref_of_a_point_are_validated(): void
+    {
+        $s = new CourierSettlement('speedy', '68134', 'СОФИЯ', '1000', 'СОФИЯ (СТОЛИЦА)');
+        $this->assertSame('68134', $s->reference);
+
+        foreach ([['Speedy', '1', 'x'], ['speedy', '', 'x'], ['speedy', '1', ' ']] as [$carrier, $ref, $name]) {
+            try {
+                new CourierSettlement($carrier, $ref, $name);
+                $this->fail('must be refused');
+            } catch (InvalidCarrierDataException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $point = new PickupPoint('speedy', '100', 'Office', 'BG', 'Sofia', 'Street 1', PickupPointKind::OFFICE, courierSettlementRef: '68134');
+        $this->assertSame('68134', $point->courierSettlementRef);
+
+        $this->assertSame(str_repeat('9', 18), (new PickupPoint('speedy', '100', 'Office', 'BG', 'Sofia', 'Street 1', PickupPointKind::OFFICE, courierSettlementRef: str_repeat('9', 18)))->courierSettlementRef);
+
+        foreach ([str_repeat('9', 19), '12a', '-5', '1.5', ' 7'] as $bad) {
+            try {
+                new PickupPoint('speedy', '100', 'Office', 'BG', 'Sofia', 'Street 1', PickupPointKind::OFFICE, courierSettlementRef: $bad);
+                $this->fail("a settlement ref of \"{$bad}\" must be refused");
             } catch (InvalidCarrierDataException) {
                 $this->addToAssertionCount(1);
             }

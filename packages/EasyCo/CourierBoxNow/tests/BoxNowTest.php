@@ -28,36 +28,54 @@ final class BoxNowTest extends TestCase
         return new CourierCredentials('boxnow', $environment, $values);
     }
 
-    public function test_the_fixture_maps_to_lockers_and_the_malformed_items_are_counted(): void
+    public function test_the_real_shaped_sample_maps_to_lockers(): void
     {
         $http = (new FakeCourierHttp)->answer(new CourierResponse(200, $this->fixture()));
 
         $batch = (new BoxNowCatalogue($http))->allPoints($this->credentials(), 'BG');
 
         $this->assertCount(3, $batch->points);
-        $this->assertSame(4, $batch->malformed, 'no id, a non-apm type, no address, an unsafe id');
+        $this->assertSame(0, $batch->malformed);
 
         [$sofia, $plovdiv, $varna] = $batch->points;
 
-        $this->assertSame('2001', $sofia->reference);
+        $this->assertSame('2', $sofia->reference);
         $this->assertSame(PickupPointKind::LOCKER, $sofia->kind);
-        $this->assertSame('BOX NOW Test Mall Sofia', $sofia->name);
-        $this->assertSame('Test Blvd 1', $sofia->addressLine);
-        $this->assertSame('Sofia', $sofia->settlement);
-        $this->assertSame('1000', $sofia->postcode);
-        $this->assertSame(42.6977, $sofia->latitude);
-        $this->assertSame(23.3219, $sofia->longitude);
+        $this->assertSame('BOX NOW Sofia Lozenets', $sofia->name, '`name` comes before `title`');
+        $this->assertSame('bul. Cherni vrah 47', $sofia->addressLine);
+        $this->assertSame('София', $sofia->settlement, 'addressLine2 is the city name');
+        $this->assertSame('1421', $sofia->postcode);
+        $this->assertSame(42.6741, $sofia->latitude, 'lat / lng are strings in the list');
+        $this->assertSame(23.3195, $sofia->longitude);
         $this->assertSame('boxnow', $sofia->carrierCode);
         $this->assertSame('BG', $sofia->countryCode);
+        $this->assertSame(['state' => 'boxnow-ready'], $sofia->features);
 
-        $this->assertSame('2002', $plovdiv->reference, 'an integer id is the same locker id as a string');
-        $this->assertSame('BOX NOW Plovdiv Test', $plovdiv->name, 'name is the fallback for title');
-        $this->assertSame('4000', $plovdiv->postcode, 'the postcode is read from addressLine2 when postalCode is absent');
-        $this->assertSame('Plovdiv', $plovdiv->settlement);
+        $this->assertSame('only-delivery', $plovdiv->features['state'], 'an only-delivery locker is kept: it can receive a delivery');
+        $this->assertSame('Пловдив', $plovdiv->settlement);
 
-        $this->assertSame('Varna', $varna->settlement, 'an explicit city wins');
-        $this->assertNull($varna->latitude, 'half a coordinate pair is dropped, the locker is kept');
-        $this->assertNull($varna->longitude);
+        $this->assertSame('BOX NOW Varna Mall', $varna->name, '`title` is the fallback when there is no `name`');
+        $this->assertSame('Варна', $varna->settlement);
+    }
+
+    public function test_malformed_items_are_skipped_and_counted_and_an_old_style_line2_still_gives_the_city(): void
+    {
+        $items = [
+            ['type' => 'apm', 'name' => 'No id', 'addressLine1' => 'Street 1', 'addressLine2' => 'София'],
+            ['id' => '5', 'type' => 'any-apm', 'name' => 'Pseudo', 'addressLine1' => '-', 'addressLine2' => 'София'],
+            ['id' => '6', 'type' => 'apm', 'name' => 'No address', 'addressLine2' => 'София'],
+            ['id' => 'bad id!', 'type' => 'apm', 'name' => 'Unsafe', 'addressLine1' => 'Street 1', 'addressLine2' => 'София'],
+            ['id' => '7', 'type' => 'apm', 'name' => 'No city', 'addressLine1' => 'Street 1'],
+            ['id' => '8', 'type' => 'apm', 'name' => 'Old style', 'addressLine1' => 'Street 8', 'addressLine2' => '1000, Sofia', 'lat' => '1', 'lng' => 'x'],
+        ];
+
+        $batch = (new BoxNowCatalogue((new FakeCourierHttp)->answer(new CourierResponse(200, (string) json_encode(['data' => $items])))))->allPoints($this->credentials(), 'BG');
+
+        $this->assertSame(5, $batch->malformed);
+        $this->assertCount(1, $batch->points);
+        $this->assertSame('Sofia', $batch->points[0]->settlement);
+        $this->assertSame('1000', $batch->points[0]->postcode, 'a postcode inside line 2 is the fallback');
+        $this->assertNull($batch->points[0]->latitude, 'half a pair is dropped');
     }
 
     public function test_a_bare_list_root_is_accepted_and_a_non_list_is_refused(): void

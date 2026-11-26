@@ -19,7 +19,7 @@ final class EloquentPickupPointRepository implements PickupPointRepository
     private const TABLE = 'shipping_pickup_points';
 
     /** Columns whose change makes a row "changed" (and is rewritten); `features` is compared as decoded JSON. */
-    private const COMPARED = ['external_id', 'kind', 'courier_type', 'name', 'settlement_name', 'postcode', 'address_line', 'latitude', 'longitude'];
+    private const COMPARED = ['external_id', 'kind', 'courier_type', 'name', 'settlement_name', 'postcode', 'address_line', 'latitude', 'longitude', 'courier_settlement_ref'];
 
     public function activeCount(string $carrierCode): int
     {
@@ -108,6 +108,7 @@ final class EloquentPickupPointRepository implements PickupPointRepository
             'settlement_name' => $point->settlement,
             'postcode' => $point->postcode,
             'address_line' => $point->addressLine,
+            'courier_settlement_ref' => $point->courierSettlementRef,
             'latitude' => $point->latitude,
             'longitude' => $point->longitude,
             'features' => $point->features === [] ? null : json_encode($point->features, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),

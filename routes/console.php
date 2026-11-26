@@ -79,3 +79,7 @@ Schedule::command('privacy:prune-exports')->dailyAt('03:20');
 // COUR-1a (courier-integration-design.md §3.4): the nightly refresh of the couriers' points lists, queued, one job per ENABLED courier. The command is a
 // no-op when no courier is switched on (a disabled courier is never queued and never called). withoutOverlapping: a slow run must not start a second one.
 Schedule::command('couriers:sync')->dailyAt('03:40')->withoutOverlapping();
+
+// COUR-1b (courier-integration-design.md §3.4): the couriers' settlements change rarely, so they are rebuilt weekly, Sunday 04:00, together with a points sync (the points are linked to them
+// right after). Enabled couriers only, like the nightly run; a courier's first run builds them too (nothing was ever built).
+Schedule::command('couriers:sync --settlements')->weeklyOn(0, '04:00')->withoutOverlapping();

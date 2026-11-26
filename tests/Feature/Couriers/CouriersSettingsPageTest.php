@@ -39,6 +39,13 @@ class CouriersSettingsPageTest extends TestCase
 
     private const SECRET = 'TYPED-SECRET-VALUE-123';
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Enabling a courier on the page queues its first sync (QUEUE_CONNECTION is sync in tests): never let a test run it.
+        Queue::fake();
+    }
+
     private function stored(string $key): ?string
     {
         return app(SiteSettingsRepository::class)->get($key);
@@ -80,7 +87,7 @@ class CouriersSettingsPageTest extends TestCase
         Livewire::test(CouriersSettings::class)->assertForbidden();
     }
 
-    public function test_a_courier_is_off_by_default_and_the_page_shows_only_what_exists(): void
+    public function test_every_installed_courier_is_off_by_default_and_the_page_shows_only_what_exists(): void
     {
         $this->actAsPanelAdministrator();
 
@@ -88,10 +95,18 @@ class CouriersSettingsPageTest extends TestCase
 
         $this->assertFalse($component->get('data.boxnow.enabled'));
         $this->assertSame('test', $component->get('data.boxnow.environment'));
-        $this->assertFalse(app(CourierSettings::class)->isEnabled('boxnow'));
+        foreach (['boxnow', 'econt', 'speedy'] as $code) {
+            $this->assertFalse($component->get("data.{$code}.enabled"), $code);
+            $this->assertFalse(app(CourierSettings::class)->isEnabled($code), $code);
+        }
+
         $html = $component->html();
-        $this->assertStringNotContainsString('Econt', $html);
-        $this->assertStringNotContainsString('Speedy', $html);
+        foreach (['BOX NOW', 'Econt', 'Speedy'] as $name) {
+            $this->assertStringContainsString($name, $html);
+        }
+
+        // COUR-3a's sender profile and defaults are not here, and no empty section stands in for them.
+        $this->assertStringNotContainsString('sender', strtolower($html));
     }
 
     // --- saving ------------------------------------------------------------------------------------------------------
@@ -317,7 +332,15 @@ class CouriersSettingsPageTest extends TestCase
         $component = Livewire::test(CouriersSettings::class)->call('checkConnection', 'boxnow');
         $this->assertSame('not_enabled', $component->get('connection.boxnow.code'));
 
+        // The API host is pre-filled (api-stage.boxnow.bg for the test environment), so what is missing is the credentials.
         $this->enableBoxNow(withCredentials: false);
+        $component = Livewire::test(CouriersSettings::class)->call('checkConnection', 'boxnow');
+        $this->assertSame('not_configured', $component->get('connection.boxnow.code'));
+
+        // A stored host that is not on the BOX NOW domains is dropped, and is NOT replaced by the default: nothing is guessed.
+        app(SiteSettingsRepository::class)->set('couriers.boxnow.test.api_host', 'evil.example.com');
+        app(SiteSettingsRepository::class)->set('couriers.boxnow.test.client_id', 'fake-id');
+        app(SiteSettingsRepository::class)->set('couriers.boxnow.test.client_secret', Crypt::encryptString('fake-secret'));
         $component = Livewire::test(CouriersSettings::class)->call('checkConnection', 'boxnow');
         $this->assertSame('api_host_missing', $component->get('connection.boxnow.code'));
 

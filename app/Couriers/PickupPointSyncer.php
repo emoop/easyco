@@ -3,6 +3,8 @@
 namespace App\Couriers;
 
 use App\Couriers\Events\PickupPointsSynced;
+use App\Couriers\Settlements\SettlementLinker;
+use App\Couriers\Settlements\SettlementSyncer;
 use App\Services\ShippingProviderResolver;
 use DateTimeImmutable;
 use EasyCo\Shipping\Carrier\PickupPoint;
@@ -42,10 +44,15 @@ final class PickupPointSyncer
         private readonly CourierSettings $settings,
         private readonly ShippingProviderResolver $resolver,
         private readonly PickupPointRepository $points,
+        private readonly SettlementSyncer $settlements,
+        private readonly SettlementLinker $linker,
     ) {}
 
-    /** @return CourierSyncRun|null null when the courier is not enabled, or a run of it is already going */
-    public function run(string $carrierCode, string $trigger): ?CourierSyncRun
+    /**
+     * @param  bool  $withSettlements  rebuild the courier's settlements first (the weekly run; also done once, whenever none was ever built)
+     * @return CourierSyncRun|null null when the courier is not enabled, or a run of it is already going
+     */
+    public function run(string $carrierCode, string $trigger, bool $withSettlements = false): ?CourierSyncRun
     {
         $descriptor = $this->couriers->descriptor($carrierCode);
 
@@ -60,16 +67,18 @@ final class PickupPointSyncer
         }
 
         try {
-            return $this->sync($carrierCode, $trigger);
+            return $this->sync($carrierCode, $trigger, $withSettlements);
         } finally {
             $lock->release();
         }
     }
 
-    private function sync(string $carrierCode, string $trigger): CourierSyncRun
+    private function sync(string $carrierCode, string $trigger, bool $withSettlements): CourierSyncRun
     {
         $started = new DateTimeImmutable;
-        $counts = ['seen' => 0, 'new_count' => 0, 'changed' => 0, 'deactivated' => 0, 'skipped' => 0];
+        $counts = ['seen' => 0, 'new_count' => 0, 'changed' => 0, 'deactivated' => 0, 'skipped' => 0, 'unmapped' => 0];
+
+        $this->buildSettlements($carrierCode, $withSettlements);
 
         try {
             $descriptor = $this->couriers->descriptor($carrierCode);
@@ -94,6 +103,8 @@ final class PickupPointSyncer
             }
 
             $counts['deactivated'] = $this->points->deactivateUnseen($carrierCode, $started);
+            // §3.3 item 5: through the courier's own settlement id (BOX NOW: postcode + name); what maps to nothing is counted.
+            $counts['unmapped'] = $this->linker->link($carrierCode);
 
             $run = $this->record($carrierCode, $trigger, $started, $counts['skipped'] > 0 ? CourierSyncRun::PARTIAL : CourierSyncRun::OK, $counts, null);
 
@@ -107,6 +118,24 @@ final class PickupPointSyncer
             Log::error('Courier points sync failed unexpectedly.', ['carrier' => $carrierCode, 'exception' => $e::class]);
 
             return $this->record($carrierCode, $trigger, $started, CourierSyncRun::FAILED, $counts, 'unexpected_error');
+        }
+    }
+
+    /**
+     * The settlements come BEFORE the points, so the points can be linked in the same run. A failure here never fails the points
+     * sync (the points are still worth having): it is logged by class and the points are simply left unmapped until the next run.
+     */
+    private function buildSettlements(string $carrierCode, bool $force): void
+    {
+        if (! $force && $this->settlements->hasRun($carrierCode)) {
+            return;
+        }
+
+        try {
+            $result = $this->settlements->run($carrierCode);
+            Log::info('Courier settlements built.', ['carrier' => $carrierCode, 'created' => $result->created, 'updated' => $result->updated]);
+        } catch (Throwable $e) {
+            Log::warning('Courier settlements could not be built.', ['carrier' => $carrierCode, 'exception' => $e::class]);
         }
     }
 
@@ -149,7 +178,6 @@ final class PickupPointSyncer
             'started_at' => $started->format('Y-m-d H:i:s.u'),
             'finished_at' => (new DateTimeImmutable)->format('Y-m-d H:i:s.u'),
             'outcome' => $outcome,
-            'unmapped' => 0,
             'error_code' => $error,
         ]);
     }

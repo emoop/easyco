@@ -1,0 +1,6 @@
+﻿id,countryId,mainSiteId,type,typeEn,name,nameEn,municipality,municipalityEn,region,regionEn,postCode,addressNomenclature,x,y,servingDays,servingOfficeId,servingHubOfficeId
+68134,100,0,гр.,city,СОФИЯ,SOFIA,СТОЛИЧНА,STOLICHNA,СОФИЯ (СТОЛИЦА),SOFIA (STOLICA),1000,1,23.3219,42.6977,1111111,100,101
+56784,100,0,гр.,city,ПЛОВДИВ,PLOVDIV,ПЛОВДИВ,PLOVDIV,ПЛОВДИВ,PLOVDIV,4000,1,24.7453,42.1354,1111111,200,201
+10001,100,0,с.,village,"БОВ",BOV,СВОГЕ,SVOGE,СОФИЯ,SOFIA,2270,0,,,1111100,300,301
+x,100,0,с.,village,БРОКЕН,BROKEN,,,,,,0,,,,,
+
