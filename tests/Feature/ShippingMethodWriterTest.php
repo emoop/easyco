@@ -158,12 +158,12 @@ class ShippingMethodWriterTest extends TestCase
 
     public function test_a_carrier_method_stores_its_code_and_no_price(): void
     {
-        $method = $this->writer()->create($this->zoneId, $this->input(['name' => 'Econt', 'kind' => 'carrier', 'price' => null, 'carrierCode' => 'econt']));
+        $method = $this->writer()->create($this->zoneId, $this->input(['name' => 'Econt', 'kind' => 'carrier', 'price' => null, 'carrierCode' => 'acme']));
 
         $stored = $this->stored((string) $method->id());
 
         $this->assertSame(ShippingMethodKind::CARRIER, $stored->kind());
-        $this->assertSame('econt', $stored->carrierCode());
+        $this->assertSame('acme', $stored->carrierCode());
         $this->assertNull($stored->amountMinor());
     }
 
