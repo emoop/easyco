@@ -45,8 +45,7 @@ class ShippingProviderResolverTest extends TestCase
 
     public function test_core_registers_no_carrier_and_an_unknown_carrier_is_refused_by_name(): void
     {
-        // COUR-1a: the BOX NOW package is installed (registered, switched OFF); core itself registers nothing.
-        $this->assertSame(['boxnow'], array_map(static fn (CarrierRegistration $c): string => $c->code, $this->resolver()->carriers()), 'only the installed courier package');
+        $this->assertSame([], $this->resolver()->carriers(), 'V1 ships no carrier (BOX NOW is installed but not enabled, so it is not listed)');
 
         foreach (['rateProvider', 'pickupPointCatalogue', 'shipmentGateway'] as $method) {
             try {
@@ -147,7 +146,7 @@ class ShippingProviderResolverTest extends TestCase
         $this->installCarrier('acme', [CarrierCapability::RATE, CarrierCapability::LABEL]);
         $this->installCarrier('beta', [CarrierCapability::PICKUP]);
 
-        $this->assertSame(['boxnow', 'acme', 'beta'], array_map(static fn (CarrierRegistration $c): string => $c->code, $this->resolver()->carriers()), 'BOX NOW (COUR-1a) was registered first, at boot');
+        $this->assertSame(['acme', 'beta'], array_map(static fn (CarrierRegistration $c): string => $c->code, $this->resolver()->carriers()));
         $this->assertSame(['acme'], array_map(static fn (CarrierRegistration $c): string => $c->code, $this->resolver()->carriersProviding(CarrierCapability::LABEL)));
         $this->assertInstanceOf(FakeRateProvider::class, $this->resolver()->rateProvider('acme'));
         $this->assertInstanceOf(FakeShipmentGateway::class, $this->resolver()->shipmentGateway('acme'));

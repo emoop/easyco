@@ -60,20 +60,22 @@ final class ShippingProviderResolver
     }
 
     /**
-     * Every registered carrier, in registration order — what an admin screen or a
-     * method form lists. Read from the registry, never from a list written here.
+     * Every registered carrier that may be used, in registration order — what an admin screen or a
+     * method form lists. Read from the registry, never from a list written here. An installed
+     * integrated courier that is not enabled is NOT listed (the same rule resolve() applies):
+     * it is unreachable from every path, the admin forms included.
      *
      * @return list<CarrierRegistration>
      */
     public function carriers(): array
     {
-        return $this->registry->all();
+        return array_values(array_filter($this->registry->all(), fn (CarrierRegistration $c): bool => $this->couriers->isCallable($c->code)));
     }
 
     /** @return list<CarrierRegistration> the carriers that declare $capability */
     public function carriersProviding(CarrierCapability $capability): array
     {
-        return $this->registry->providing($capability);
+        return array_values(array_filter($this->registry->providing($capability), fn (CarrierRegistration $c): bool => $this->couriers->isCallable($c->code)));
     }
 
     /**
