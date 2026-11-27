@@ -158,6 +158,7 @@ class CheckoutControllerTest extends TestCase
             'delivery_type' => 'street_address',
             'country' => 'BG',
             'city' => 'Sofia',
+            'postal_code' => '1000', // COUR-2a.5: a delivery to an address needs its postcode
             'address_line_1' => 'Vitosha Blvd 1',
             ...$this->shippingPayload(),
         ], $overrides);
@@ -194,6 +195,7 @@ class CheckoutControllerTest extends TestCase
             'phone' => '+359888111222',
             'country' => 'BG',
             'city' => 'Sofia',
+            'postal_code' => '1000', // COUR-2a.5: a delivery to an address needs its postcode
             'address_line_1' => 'Graf Ignatiev 5',
         ]);
         $addressResponse->assertStatus(201);
@@ -213,7 +215,7 @@ class CheckoutControllerTest extends TestCase
             'address_id' => $addressId,
         ]);
 
-        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['address_line_1']);
+        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['postal_code'], $payload['address_line_1']);
 
         $response = $this->postJson('/api/checkout', $payload);
 
@@ -237,7 +239,7 @@ class CheckoutControllerTest extends TestCase
             'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
             'settlement' => 'Plovdiv',
         ], $overrides));
-        unset($payload['city'], $payload['address_line_1']);
+        unset($payload['city'], $payload['postal_code'], $payload['address_line_1']);
 
         // A pickup point is delivered by a pickup method (stage 4e: the method's flag must agree with the address).
         return array_merge($payload, $this->shippingPayload(true));
@@ -274,7 +276,7 @@ class CheckoutControllerTest extends TestCase
         $this->addLineViaHttp($variationId, 1);
 
         $payload = $this->checkoutPayload(array_merge(['address_id' => $addressId], $this->shippingPayload(true)));
-        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['address_line_1']);
+        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['postal_code'], $payload['address_line_1']);
 
         $response = $this->postJson('/api/checkout', $payload)->assertStatus(201);
 
@@ -310,12 +312,12 @@ class CheckoutControllerTest extends TestCase
         $this->loggedInAccount();
         $addressId = $this->postJson('/api/addresses', [
             'delivery_type' => 'street_address', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888111222',
-            'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Graf Ignatiev 5',
+            'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Graf Ignatiev 5',
         ])->assertStatus(201)->json('id');
         $this->addLineViaHttp($this->pricedPurchasableVariation('10.00', 10), 1);
 
         $payload = $this->checkoutPayload(['address_id' => $addressId]);
-        unset($payload['delivery_type'], $payload['city'], $payload['address_line_1']);
+        unset($payload['delivery_type'], $payload['city'], $payload['postal_code'], $payload['address_line_1']);
 
         $this->postJson('/api/checkout', $payload)->assertStatus(422)->assertJsonValidationErrors(['address_id']);
     }
@@ -334,7 +336,7 @@ class CheckoutControllerTest extends TestCase
         $this->addLineViaHttp($variationId, 1);
 
         $payload = $this->checkoutPayload(array_merge(['address_id' => $addressId], $this->shippingPayload(true)));
-        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['address_line_1']);
+        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['postal_code'], $payload['address_line_1']);
 
         \Illuminate\Support\Facades\Log::spy();
         $this->postJson('/api/checkout', $payload)
@@ -507,6 +509,7 @@ class CheckoutControllerTest extends TestCase
             'phone' => '+359888111222',
             'country' => 'BG',
             'city' => 'Sofia',
+            'postal_code' => '1000', // COUR-2a.5: a delivery to an address needs its postcode
             'address_line_1' => 'Graf Ignatiev 5',
         ]);
         $addressId = $addressResponse->json('id');
@@ -523,6 +526,7 @@ class CheckoutControllerTest extends TestCase
             'delivery_type' => 'street_address',
             'country' => 'BG',
             'city' => 'Sofia',
+            'postal_code' => '1000', // COUR-2a.5: a delivery to an address needs its postcode
             'address_line_1' => 'Graf Ignatiev 5',
         ]);
 
@@ -640,7 +644,8 @@ class CheckoutControllerTest extends TestCase
 
         $value = $this->longestAcceptedValue($field, $limit);
 
-        $response = $this->postJson('/api/checkout', $this->checkoutPayload([$field => $value]));
+        // COUR-2a.5: Bulgaria's postcode is four digits, so the width of the field is tried with a country that has no format
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload($field === 'postal_code' ? [$field => $value, 'country' => 'DE'] : [$field => $value]));
 
         $response->assertStatus(201);
 

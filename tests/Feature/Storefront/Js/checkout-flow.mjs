@@ -192,7 +192,8 @@ const point = (id, carrier, kind, where) => addr(id, { delivery_type: 'pickup_po
 // a refusal that leaves the form usable (a field error), for scenarios that press the button more than once
 const REFUSED = { status: 422, data: { message: 'x', errors: { customer_note: ['x'] } } };
 const savedAddresses = [
-    addr(1, { is_default: true }),
+    // COUR-2a.5: a street address saved before the postcode became required has none
+    addr(1, { is_default: true, ...(scenario.includes('without_a_postcode') ? { postal_code: null } : {}) }),
     addr(2, { recipient_first_name: 'Мария', recipient_last_name: 'Иванова', phone: '+359888222222', city: 'Plovdiv', postal_code: '4000' }),
     addr(3), addr(4),
     point(11, 'Еконт', 'office', 'Econt Center 1'),
@@ -254,15 +255,15 @@ function quoteAll(body) {
         { id: 1, name: 'Econt address', courier: 'Еконт', delivery_type: 'address', destinations: { address: dest(preview, 1, 'address', 500) } },
         { id: 4, name: 'Econt office', courier: 'Еконт', delivery_type: 'office', destinations: { office: dest(preview, 4, 'office', 300) } },
         { id: 5, name: 'Econt locker', courier: 'Еконт', delivery_type: 'locker', destinations: { locker: dest(preview, 5, 'locker', 0) } },
-        { id: 6, name: 'Speedy office', courier: 'Спиди', delivery_type: 'office', destinations: { office: dest(preview, 6, 'office', 350) }, integration: scenario.startsWith('picker_') ? { carrier: 'speedy', map: false } : null },
+        { id: 6, name: 'Speedy office', courier: 'Спиди', delivery_type: 'office', destinations: { office: dest(preview, 6, 'office', 350) }, integration: scenario.startsWith('picker_') || scenario.includes('_resolve_') ? { carrier: 'speedy', map: false } : null },
         // COUR-2a.3: ONE method that serves address, office AND locker (scope ANY, no delivery type), with a list; only in the `picker_any_*` scenarios
-        ...(scenario.startsWith('picker_any') ? [{ id: 7, name: 'Omni delivery', courier: 'Омни', delivery_type: null, destinations: { address: dest(preview, 7, 'address', 600), office: dest(preview, 7, 'office', 400), locker: dest(preview, 7, 'locker', 300) }, integration: { carrier: 'speedy', map: false } }] : []),
+        ...(scenario.startsWith('picker_any') || scenario.includes('_resolve_') ? [{ id: 7, name: 'Omni delivery', courier: 'Омни', delivery_type: null, destinations: { address: dest(preview, 7, 'address', 600), office: dest(preview, 7, 'office', 400), locker: dest(preview, 7, 'locker', 300) }, integration: { carrier: 'speedy', map: false } }] : []),
         { id: 2, name: 'Local courier', courier: null, delivery_type: null, destinations: { address: dest(preview, 2, 'address', 700) } },
     ].filter((m) => ! dropped.includes(m.id));
     const groups = [
         { courier: 'Еконт', ids: [1, 4, 5], from: 0, destinations: ['address', 'office', 'locker'] },
         { courier: 'Спиди', ids: [6], from: 350, destinations: ['office'] },
-        ...(scenario.startsWith('picker_any') ? [{ courier: 'Омни', ids: [7], from: 300, destinations: ['address', 'office', 'locker'] }] : []),
+        ...(scenario.startsWith('picker_any') || scenario.includes('_resolve_') ? [{ courier: 'Омни', ids: [7], from: 300, destinations: ['address', 'office', 'locker'] }] : []),
         { courier: null, ids: [2], from: 700, destinations: ['address'] },
     ].map((g) => ({ courier: g.courier, methods: g.ids.filter((id) => ! dropped.includes(id)).map(String), from_minor: g.from, currency: 'EUR', destinations: g.destinations }))
         .filter((g) => g.methods.length > 0);
@@ -296,10 +297,19 @@ globalThis.fetch = async (path, init = {}) => {
     if (method_ === 'POST' && path === '/api/shipping/quote') result = { status: 200, data: quoteAll(body) };
     if (method_ === 'POST' && path === '/api/checkout') result = checkoutResponse;
     if (method_ === 'GET' && path.startsWith('/api/shipping/settlements?')) {
-        result = pickerFail ? { status: 500, data: null } : { status: 200, data: { data: [
+        let found = [
             { id: '77', name: 'Пловдив', region: 'Пловдив', postcode: '4000', is_split: false, points: 2 },
             { id: '78', name: 'Пловдив', region: 'Хасково', postcode: '6300', is_split: false, points: 1 },
-        ] } };
+        ];
+
+        // COUR-2a.5: the resolve scenarios answer like the real search: by the start of the name or of the postcode; `one_match` has only the first place
+        if (scenario.includes('_resolve_')) {
+            const typed = decodeURIComponent((path.match(/[?&]q=([^&]*)/) || [, ''])[1]).trim().toLowerCase().replace(/^(гр\.|с\.)\s*/, '');
+
+            found = found.filter((item) => (! scenario.includes('one_match') || item.id === '77') && (item.name.toLowerCase().startsWith(typed) || 'plovdiv'.startsWith(typed) || item.postcode.startsWith(typed)));
+        }
+
+        result = pickerFail ? { status: 500, data: null } : { status: 200, data: { data: found } };
     }
     if (method_ === 'GET' && path.startsWith('/api/shipping/pickup-points?')) {
         result = pointsFail ? { status: 500, data: null } : { status: 200, data: { data: [
@@ -1101,6 +1111,7 @@ const scenarios = {
 
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         await submit();
 
         const body = lastCheckout().body;
@@ -1120,6 +1131,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         const box = q('[data-sf-region-field]');
         const region = form.elements.region;
 
@@ -1189,6 +1201,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         type('   ');
         checkoutResponse = { status: 422, data: { errors: { email: ['no'] } } };
         await submit();
@@ -1464,6 +1477,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         form.elements.terms_accepted.checked = true;
         form.elements.call_before_shipping.checked = true;
         await submit();
@@ -1482,6 +1496,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
 
         await submit();
 
@@ -1498,6 +1513,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         form.elements.terms_accepted.checked = true;
         checkoutResponse = { status: 422, data: { message: 'The terms changed while you were filling in the order.', reason: 'terms_version_changed' } };
 
@@ -1663,6 +1679,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         await submit();
 
         assert.equal(checkoutPosts().length, 1, 'the form submits with every invoice field empty');
@@ -1676,6 +1693,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
 
         const toggle = form.elements.invoice_requested;
         toggle.checked = true;
@@ -1721,6 +1739,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
 
         form.elements.invoice_requested.checked = true;
         form.elements.invoice_requested.dispatch('change');
@@ -1820,6 +1839,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         form.elements.invoice_requested.checked = true;
         form.elements.invoice_requested.dispatch('change');
         set('invoice_legal_name', 'Acme');
@@ -1849,6 +1869,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
 
         const toggle = form.elements.invoice_requested;
         toggle.checked = true;
@@ -1890,6 +1911,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         checkoutResponse = { status: 422, data: { message: 'x', reason: 'payment_method_blocked' } };
         await submit();
 
@@ -1928,6 +1950,7 @@ const scenarios = {
         choose(courierRows()[2].radio);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         checkoutResponse = { status: 422, data: { message: 'x', reason: 'payment_method_blocked' } };
         await submit();
 
@@ -1999,6 +2022,7 @@ const scenarios = {
         assert.equal(q('[data-sf-postal-field]').hidden, false);
         fillContact();
         set('address_line_1', '5 Long St');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         await typeInto('postal_code', '1000');
         await submit();
 
@@ -2035,6 +2059,7 @@ const scenarios = {
         assert.equal(q('[data-sf-recipient-toggle]').attrs['aria-expanded'], 'true');
         set('recipient_email', 'friend@example.com');
         await typeInto('city', 'Sofia');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         choose(courierRows()[2].radio);
         fillContact();
         await submit();
@@ -2111,6 +2136,7 @@ const scenarios = {
         assert.equal('data-sf-saved-mode' in form.attrs, false, '«Промени» shows the fields');
         assert.equal(form.elements.address_line_1.value, 'Street 1', 'copied into the editable fields');
         set('address_line_1', 'New 9');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         choose(courierRows()[2].radio);
         await submit();
 
@@ -2158,6 +2184,7 @@ const scenarios = {
         await typeInto('city', 'Varna');
         choose(courierRows()[2].radio);
         set('address_line_1', 'Sea 1');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         await submit();
 
         const body = lastCheckout().body;
@@ -2296,6 +2323,7 @@ const scenarios = {
 
         // the street field of a saved street address, and the pick-up field of a saved point, are in the same set
         set('address_line_1', 'Fixed 5');
+        set('postal_code', '1000'); // COUR-2a.5: a delivery to an address needs its postcode
         checkoutResponse = { status: 201, data: { confirmation_url: 'http://shop.test/order/received/5?expires=1&signature=abc' } };
         await submit();
         assert.equal('address_id' in lastCheckout().body, false);
@@ -2320,6 +2348,328 @@ const scenarios = {
         fillPoint('E-7');
         chooseKind('1:address');
         assert.equal('data-sf-saved-mode' in form.attrs, false, 'what the customer typed is not replaced behind their back');
+    },
+
+    // ----------------------------------------------------------------------------------------------------------------------------------- COUR-2a.5
+    // A place that is ALREADY in the field (a saved address, autofill, a restored page) is resolved ONCE through the same settlements search, for every
+    // trigger alike: the destination changing, a `change` of the field, the address book, `pageshow`. One confident match is chosen as if the customer had
+    // chosen it; several or none are never guessed: the list opens and a hint says what to do.
+
+    // postcode + name decide between two places with the same name; the customer's own text is kept; no loop of requests
+    async picker_resolve_a_prefilled_place_by_postcode_and_name() {
+        await flush();
+        const city = form.elements.city;
+
+        set('city', 'Пловдив');
+        set('postal_code', '6300');   // autofill / a restored page set values without a single event
+        choose(courierRows()[1].radio);
+        await flush();
+
+        assert.equal(placeSearchRequests().length, 1, 'ONE resolve');
+        assert.match(placeSearchRequests()[0].path, /kind=office&carrier=speedy&q=%D0%9F/, 'the same endpoint the field uses, for the text that is there');
+        assert.equal(city.attrs['data-settlement-id'], '78', 'the postcode told the two places apart');
+        assert.equal(city.value, 'Пловдив', 'the text stays');
+        assert.equal(form.elements.postal_code.value, '6300', 'and the postcode');
+        assert.match(pointRequests().at(-1).path, /carrier=speedy&kind=office&settlement=78/);
+        assert.equal(pointRadios().length, 2, 'the offices show with no typing');
+        assert.equal(quotePosts().at(-1).body.settlement, 'Пловдив', 'the real quote runs once for the place');
+        assert.ok(city.parent.querySelector('[role="status"]').textContent.includes('6300'), 'the postcode is shown with the place');
+
+        const requests = [placeSearchRequests().length, pointRequests().length, quotePosts().length];
+
+        await flush();
+        await flush();
+        assert.deepEqual([placeSearchRequests().length, pointRequests().length, quotePosts().length], requests, 'no loop');
+
+        // a place that is already resolved is never resolved again: away and back
+        choose(courierRows()[0].radio);
+        choose(courierRows()[1].radio);
+        await flush();
+        assert.equal(placeSearchRequests().length, 1);
+        assert.equal(city.attrs['data-settlement-id'], '78');
+    },
+
+    // a single place with that name is confident even without a postcode, and the empty postcode and region are filled from it (never overwritten)
+    async picker_resolve_one_match_fills_an_empty_postcode() {
+        await flush();
+        set('city', 'гр. Пловдив');
+        choose(courierRows()[1].radio);
+        await flush();
+
+        assert.equal(form.elements.city.attrs['data-settlement-id'], '77');
+        assert.equal(form.elements.city.value, 'гр. Пловдив', 'the customer\'s own spelling stays');
+        assert.equal(form.elements.postal_code.value, '4000', 'an empty postcode is filled from the place');
+        assert.equal(form.elements.region.value, 'Пловдив');
+        assert.equal(pointRadios().length, 2);
+    },
+
+    // two places, no postcode and no region: nothing is guessed. The list opens for the typed text and the hint stands under the field AND in the office area.
+    async picker_resolve_an_ambiguous_place_is_not_guessed() {
+        await flush();
+        const city = form.elements.city;
+
+        set('city', 'Пловдив');
+        choose(courierRows()[1].radio);
+        await flush();
+
+        assert.equal(placeSearchRequests().length, 1);
+        assert.equal(city.attrs['data-settlement-id'], undefined, 'no choice was made for the customer');
+        assert.equal(placeOptions().length, 2, 'the suggestion list is open');
+        assert.ok(city.parent.querySelector('[role="status"]').textContent.includes(T('ck_pick_choose_from_list')));
+        assert.ok(q('[data-sf-picker]').textContent.includes(T('ck_pick_choose_from_list')), 'the office area says the same, not an empty box');
+        assert.equal(pointRequests().length, 0);
+        assert.equal(placeOrder.disabled, true);
+
+        // the choice is the customer's and works as ever
+        placeOptions()[1].dispatch('mousedown');
+        await flush();
+        assert.equal(city.attrs['data-settlement-id'], '78');
+        assert.match(pointRequests().at(-1).path, /settlement=78/);
+        assert.equal(pointRadios().length, 2);
+        assert.equal(q('[data-sf-picker]').textContent.includes(T('ck_pick_choose_from_list')), false, 'the hint is gone');
+    },
+
+    // with no postcode the REGION decides
+    async picker_resolve_the_region_decides_when_there_is_no_postcode() {
+        await flush();
+        set('city', 'Пловдив');
+        set('region', 'обл. Хасково');
+        choose(courierRows()[1].radio);
+        await flush();
+
+        assert.equal(form.elements.city.attrs['data-settlement-id'], '78');
+        assert.equal(form.elements.postal_code.value, '6300');
+    },
+
+    // a place the search does not know (or spells differently): the hint, the typed text stays, the list is the way on
+    async picker_resolve_a_place_that_is_not_found_shows_the_hint() {
+        await flush();
+        const city = form.elements.city;
+
+        set('city', 'Нищо');
+        choose(courierRows()[1].radio);
+        await flush();
+
+        assert.equal(city.attrs['data-settlement-id'], undefined);
+        assert.equal(city.value, 'Нищо');
+        assert.ok(city.parent.querySelector('[role="status"]').textContent.includes(T('ck_pick_no_match')));
+        assert.ok(q('[data-sf-picker]').textContent.includes(T('ck_pick_choose_from_list')));
+
+        // the same text is not asked again by the same trigger; typing again is a new place
+        const asked = placeSearchRequests().length;
+
+        choose(courierRows()[0].radio);
+        choose(courierRows()[1].radio);
+        await flush();
+        assert.equal(placeSearchRequests().length, asked, 'tried once for this place and method');
+    },
+
+    // `change` (autofill, a text left behind), `pageshow` (the page shown again) and an edit all run the SAME rule
+    async picker_resolve_follows_change_pageshow_and_edits() {
+        await flush();
+        const city = form.elements.city;
+
+        choose(courierRows()[1].radio);
+        await flush();
+        assert.equal(placeSearchRequests().length, 0, 'an empty place is nothing to resolve');
+        assert.ok(q('[data-sf-picker]').textContent.includes(T('ck_pick_choose_place')), 'the office area asks for the place, as before');
+
+        set('city', 'Пловдив');
+        set('postal_code', '4000');
+        city.dispatch('change');
+        await flush();
+        assert.equal(city.attrs['data-settlement-id'], '77');
+        assert.equal(placeSearchRequests().length, 1);
+
+        // pageshow with the same text changes nothing
+        windowListeners.pageshow.forEach((fn) => fn({ persisted: true }));
+        await flush();
+        assert.equal(placeSearchRequests().length, 1);
+        assert.equal(city.attrs['data-settlement-id'], '77');
+
+        // the text is changed behind the page's back (a restored form): the old place and its offices go, the new text is resolved
+        set('city', 'Нищо');
+        windowListeners.pageshow.forEach((fn) => fn({ persisted: true }));
+        await flush();
+        assert.equal(city.attrs['data-settlement-id'], undefined, 'the old place is gone');
+        assert.equal(pointRadios().length, 0, 'and no stale office list under the changed place');
+        assert.equal(placeSearchRequests().length, 2);
+
+        // typing over a resolved place drops it at once
+        set('city', 'Пловдив');
+        city.dispatch('change');
+        await flush();
+        assert.equal(city.attrs['data-settlement-id'], '77');
+        assert.equal(pointRadios().length, 2);
+        city.value = 'Пловдивx';
+        city.dispatch('input');
+        assert.equal(city.attrs['data-settlement-id'], undefined);
+        assert.equal(pointRadios().length, 0, 'the offices of the old place are cleared at once');
+        assert.equal(form.elements.pickup_point_id.value, '');
+    },
+
+    // the order can be placed with the auto-resolved office: OUR point id and nothing typed
+    async picker_resolve_an_office_of_a_resolved_place_can_be_ordered() {
+        await flush();
+        set('city', 'Пловдив');
+        set('postal_code', '4000');
+        choose(courierRows()[1].radio);
+        await flush();
+        fillContact();
+        pointRadios()[0].checked = true;
+        pointRadios()[0].dispatch('change');
+        await flush();
+        assert.equal(placeOrder.disabled, false);
+        await submit();
+
+        const body = lastCheckout().body;
+
+        assert.equal(body.pickup_point_id, '501');
+        assert.equal(body.settlement, 'Пловдив');
+        assert.equal('postal_code' in body, false, 'a pick-up order carries no postcode: it comes from the place');
+        assert.equal(body.delivery_type, 'pickup_point');
+    },
+
+    // an address delivery needs its postcode: required marker, the error under the field only after a press, and an office takes none
+    async postcode_is_required_for_an_address_only() {
+        await flush();
+        choose(courierRows()[0].radio);
+        chooseKind('1:address');
+
+        assert.equal(markerOf('postal_code'), true, 'required for an address');
+        assert.equal(form.elements.postal_code.attrs['aria-required'], 'true');
+        assert.equal(form.elements.postal_code.required, true);
+        assert.equal(form.elements.postal_code.attrs['aria-invalid'], undefined, 'no error on load');
+        assert.equal(q('[data-sf-error-for="postal_code"]').hidden, true);
+
+        fillContact();
+        await typeInto('city', 'Sofia');
+        set('address_line_1', '5 Long St');
+        await submit();
+        assert.equal(checkoutPosts().length, 0, 'nothing is sent without the postcode');
+        assert.equal(q('[data-sf-error-for="postal_code"]').hidden, false);
+        assert.equal(q('[data-sf-error-for="postal_code"]').textContent, T('ck_postal_required'));
+        assert.equal(form.elements.postal_code.attrs['aria-invalid'], 'true');
+
+        set('postal_code', '1000');
+        await submit();
+        assert.equal(checkoutPosts().length, 1);
+        assert.equal(lastCheckout().body.postal_code, '1000');
+
+        // an office or a locker is not asked for it
+        chooseKind('4:office');
+        assert.equal(markerOf('postal_code'), false);
+        assert.equal(form.elements.postal_code.required, false);
+    },
+
+    // the postcode the server refuses is shown under ITS field
+    async postcode_a_server_error_stands_under_the_field() {
+        await flush();
+        choose(courierRows()[0].radio);
+        chooseKind('1:address');
+        fillContact();
+        await typeInto('city', 'Sofia');
+        set('postal_code', '12');
+        set('address_line_1', '5 Long St');
+        checkoutResponse = { status: 422, data: { message: 'x', errors: { postal_code: ['The postal code must be 4 digits.'] } } };
+        await submit();
+        assert.equal(q('[data-sf-error-for="postal_code"]').textContent, 'The postal code must be 4 digits.');
+        assert.equal(q('[data-sf-error-for="postal_code"]').hidden, false);
+    },
+
+    // ---- signed in
+
+    // the address book: the picker follows the address that is chosen NOW; the old place and its offices are gone
+    async acct_resolve_the_address_book_without_a_saved_point_follows_the_chosen_address() {
+        const omni = courierRows().find((r) => r.text.startsWith('Омни'));
+        const city = form.elements.city;
+
+        choose(omni.radio);
+        chooseKind('7:address');
+        assert.equal(form.attrs['data-sf-saved-mode'], 'saved');
+
+        const second = rowsOf(q('[data-sf-saved-list]'))[1];   // Plovdiv 4000
+
+        second.radio.dispatch('click');
+        await flush();
+        assert.equal(city.value, 'Plovdiv');
+
+        // address -> office: the saved street rows do not fit; the place of the address that is chosen NOW is resolved (Latin spelling, postcode decides)
+        chooseKind('7:office');
+        await flush();
+        assert.equal(city.attrs['data-settlement-id'], '77');
+        assert.equal(city.value, 'Plovdiv', 'what the address held stays');
+        assert.equal(form.elements.postal_code.value, '4000');
+        assert.match(pointRequests().at(-1).path, /settlement=77/);
+        assert.equal(pointRadios().length, 2);
+
+        // back to the street rows: the default address returns; the place of the OFFICE list is gone with it
+        chooseKind('7:address');
+        assert.equal(city.value, 'Sofia');
+        assert.equal(city.attrs['data-settlement-id'], undefined);
+
+        chooseKind('7:locker');
+        await flush();
+        assert.equal(pointRadios().length, 0, 'no stale offices under another place');
+        assert.equal(city.attrs['data-settlement-id'], undefined, 'Sofia is not a place of this list: the hint, not a guess');
+        assert.ok(q('[data-sf-picker]').textContent.includes(T('ck_pick_choose_from_list')));
+    },
+
+    // a saved OFFICE is the customer's choice already: it is not resolved, the place stays on the page; «Промени» hands over to the list
+    async acct_resolve_a_saved_office_keeps_the_place_on_the_page_until_it_is_changed() {
+        const city = form.elements.city;
+
+        choose(courierRows()[1].radio);   // Speedy office: the saved Speedy office row is chosen
+        await flush();
+
+        assert.equal(form.attrs['data-sf-saved-mode'], 'saved');
+        assert.equal(form.attrs['data-sf-saved-kind'], 'pickup', 'the stylesheet keeps the place visible for a saved office');
+        assert.equal(placeSearchRequests().length, 0, 'a saved office is not resolved');
+        assert.equal(city.value, 'Sofia');
+
+        const change = q('[data-sf-saved-list]').querySelectorAll('button')[0];
+
+        change.dispatch('click');
+        await flush();
+        assert.equal('data-sf-saved-mode' in form.attrs, false);
+        assert.equal('data-sf-saved-kind' in form.attrs, false);
+        assert.equal(placeSearchRequests().length, 1, '«Промени» runs the same resolve for the place the row filled in');
+        assert.ok(q('[data-sf-picker]').textContent.includes(T('ck_pick_choose_from_list')), 'Sofia is not a place of this list: the hint');
+    },
+
+    // typing over the place of a saved office leaves that office (the same step as «Промени»)
+    async acct_resolve_typing_over_the_place_of_a_saved_office_leaves_it() {
+        const city = form.elements.city;
+
+        choose(courierRows()[1].radio);
+        await flush();
+        assert.equal(form.attrs['data-sf-saved-mode'], 'saved');
+
+        city.value = 'Пло';
+        city.dispatch('input');
+        await flush();
+        assert.equal('data-sf-saved-mode' in form.attrs, false, 'the fields are shown: the customer is editing');
+        assert.equal(q('[data-sf-pickup-manual]').hidden, true, 'and the list picker, not the free-text office field, is what they fill in');
+    },
+
+    // a saved street address without a postcode is opened for editing (the empty required field must be seen) and never goes out as its id
+    async acct_resolve_a_saved_street_without_a_postcode_is_opened_and_asks_for_it_without_a_postcode() {
+        choose(courierRows()[0].radio);
+        chooseKind('1:address');
+
+        assert.equal('data-sf-saved-mode' in form.attrs, false, 'not collapsed: the postcode field is on the page');
+        assert.equal(form.elements.postal_code.value, '');
+        assert.equal(markerOf('postal_code'), true);
+        assert.equal(form.elements.postal_code.attrs['aria-invalid'], undefined, 'no red field on load');
+
+        await submit();
+        assert.equal(checkoutPosts().length, 0);
+        assert.equal(q('[data-sf-error-for="postal_code"]').textContent, T('ck_postal_required'));
+
+        set('postal_code', '2000');
+        await submit();
+        assert.equal('address_id' in lastCheckout().body, false, 'the full fields go, not the id of an incomplete address');
+        assert.equal(lastCheckout().body.postal_code, '2000');
     },
 
     async acct_logout_posts_and_reloads_the_page() {

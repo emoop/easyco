@@ -74,7 +74,7 @@ class AccountAddressBookTest extends TestCase
         return (int) DB::table('addresses')->insertGetId([
             'account_id' => $account instanceof AccountModel ? $account->getKey() : $account,
             'delivery_type' => 'street_address', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
-            'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => $line,
+            'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => $line,
             'default_marker' => $marker, 'created_at' => $updatedAt, 'updated_at' => $updatedAt,
         ]);
     }
@@ -109,7 +109,7 @@ class AccountAddressBookTest extends TestCase
         $base = ['cart_id' => $cartId, 'email' => 'me@example.com', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888123456', 'payment_method' => 'cash_on_delivery'];
         $where = $addressId !== null
             ? ['address_id' => $addressId]
-            : array_merge(['delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha Blvd 1'], $typed);
+            : array_merge(['delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Vitosha Blvd 1'], $typed);
 
         return (string) $this->postJson('/api/checkout', [...$base, ...$where, ...$this->shippingPayload()])->assertStatus(201)->json('order.id');
     }
@@ -126,7 +126,7 @@ class AccountAddressBookTest extends TestCase
         $cartId = (string) $this->postJson('/api/cart/lines', ['variation_id' => $this->pricedVariation(), 'quantity' => 1])->assertStatus(201)->json('cart_id');
         $payload = [
             'cart_id' => $cartId, 'email' => 'me@example.com', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888123456', 'payment_method' => 'cash_on_delivery',
-            ...array_merge(['delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha Blvd 1'], $typed), ...$this->shippingPayload(),
+            ...array_merge(['delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Vitosha Blvd 1'], $typed), ...$this->shippingPayload(),
         ];
         $this->app->forgetScopedInstances();
 
@@ -327,7 +327,7 @@ class AccountAddressBookTest extends TestCase
         $this->assertSame($id, $this->defaultIdOf($me), 'a first address saved by checkout is the default too');
         DB::table('addresses')->where('id', $id)->update(['updated_at' => '2026-01-01 00:00:00']);
 
-        $orderId = $this->placeOrder(typed: ['city' => '  SOFIA ', 'address_line_1' => 'vitosha   blvd 1']);
+        $orderId = $this->placeOrder(typed: ['city' => '  SOFIA ', 'postal_code' => '1000', 'address_line_1' => 'vitosha   blvd 1']);
 
         $this->assertSame(1, DB::table('addresses')->where('account_id', $me->getKey())->count(), 'reused, not inserted');
         $this->assertNotSame('2026-01-01 00:00:00', DB::table('addresses')->where('id', $id)->value('updated_at'), 'updated_at is bumped');
@@ -358,7 +358,7 @@ class AccountAddressBookTest extends TestCase
     {
         $cartId = (string) $this->postJson('/api/cart/lines', ['variation_id' => $this->pricedVariation(), 'quantity' => 1])->assertStatus(201)->json('cart_id');
         $this->postJson('/api/checkout', ['cart_id' => $cartId, 'email' => 'g@example.com', 'recipient_first_name' => 'G', 'recipient_last_name' => 'B', 'phone' => '+359888123456', 'payment_method' => 'cash_on_delivery',
-            'delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha Blvd 1', ...$this->shippingPayload()])->assertStatus(201);
+            'delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Vitosha Blvd 1', ...$this->shippingPayload()])->assertStatus(201);
 
         $row = DB::table('addresses')->first();
         $this->assertNull($row->account_id);

@@ -85,7 +85,7 @@ class CheckoutFormV2Test extends TestCase
         $this->assertSame(0, DB::table('orders')->count());
 
         $this->loggedInAccount();
-        $address = ['delivery_type' => 'street_address', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'V 1'];
+        $address = ['delivery_type' => 'street_address', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'V 1'];
         $this->postJson('/api/addresses', $address)->assertStatus(422)->assertJsonValidationErrors(['recipient_first_name', 'recipient_last_name']);
     }
 
@@ -96,7 +96,7 @@ class CheckoutFormV2Test extends TestCase
         foreach (['recipient_first_name', 'recipient_last_name'] as $field) {
             $this->checkout($this->streetFields('BG'), [$field => str_repeat('я', 101)])->assertStatus(422)->assertJsonValidationErrors([$field]);
 
-            $address = ['delivery_type' => 'street_address', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'V 1'];
+            $address = ['delivery_type' => 'street_address', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'V 1'];
             $this->postJson('/api/addresses', array_merge($address, [$field => str_repeat('я', 101)]))->assertStatus(422)->assertJsonValidationErrors([$field]);
             $this->postJson('/api/addresses', array_merge($address, [$field => str_repeat('я', 100)]))->assertStatus(201);
         }
@@ -112,7 +112,7 @@ class CheckoutFormV2Test extends TestCase
         $this->assertArrayNotHasKey('recipient_name', $response->json('order'));
 
         $this->loggedInAccount();
-        $created = $this->postJson('/api/addresses', ['delivery_type' => 'street_address', 'recipient_first_name' => 'Сия', 'recipient_last_name' => 'Иванова', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'V 1'])->assertStatus(201);
+        $created = $this->postJson('/api/addresses', ['delivery_type' => 'street_address', 'recipient_first_name' => 'Сия', 'recipient_last_name' => 'Иванова', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'V 1'])->assertStatus(201);
         $this->assertSame(['Сия', 'Иванова'], [$created->json('recipient_first_name'), $created->json('recipient_last_name')]);
         $this->assertArrayNotHasKey('recipient_name', $created->json());
         $this->assertArrayNotHasKey('recipient_name', $this->getJson('/api/addresses')->json('data.0'));
@@ -121,7 +121,7 @@ class CheckoutFormV2Test extends TestCase
     public function test_a_saved_address_brings_its_own_two_names_to_the_order(): void
     {
         $account = $this->loggedInAccount();
-        $id = $this->postJson('/api/addresses', ['delivery_type' => 'street_address', 'recipient_first_name' => 'Сия', 'recipient_last_name' => 'Иванова', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'V 1'])->json('id');
+        $id = $this->postJson('/api/addresses', ['delivery_type' => 'street_address', 'recipient_first_name' => 'Сия', 'recipient_last_name' => 'Иванова', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'V 1'])->json('id');
 
         $payload = $this->regionPayload($this->regionCart(), ['address_id' => (string) $id]);
         unset($payload['recipient_first_name'], $payload['recipient_last_name']);

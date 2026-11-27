@@ -34,6 +34,7 @@ export function createPickupPicker(host, hooks) {
     var key = '';             // what the list belongs to (method + kind): when it changes the chosen point is dropped
     var manual = false;       // the customer (or a failure) switched to the free-text field
     var settlement = null;    // the chosen place (an item of the settlement search), handed in by the page
+    var listHint = false;     // COUR-2a.5: the page tried to resolve the place already in its field and could not: the status says to choose it from the list
     var points = [];
     var chosen = null;        // the chosen point
     var pointsSeq = 0;
@@ -168,7 +169,7 @@ export function createPickupPicker(host, hooks) {
 
     /** What the status line says while there is no list: the place first. */
     function askForPlace() {
-        say(settlement === null ? t('ck_pick_choose_place') : '');
+        say(settlement === null ? t(listHint ? 'ck_pick_choose_from_list' : 'ck_pick_choose_place') : '');
     }
 
     // ------------------------------------------------------------------------------------------ the points
@@ -353,6 +354,15 @@ export function createPickupPicker(host, hooks) {
 
             if (! manual) {
                 loadPoints();
+            }
+        },
+
+        /** The page could not resolve the place that was already in its field (or has resolved it, or it was edited): the status line says what to do. */
+        setPlaceHint: function (on) {
+            listHint = on === true;
+
+            if (carrier !== null && settlement === null) {
+                askForPlace();
             }
         },
 

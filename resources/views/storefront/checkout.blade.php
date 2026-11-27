@@ -134,7 +134,7 @@
                             <p class="sf-field-error" id="sf-err-city" data-sf-error-for="city" hidden></p>
                         </div>
                         <div class="sf-field sf-float" data-sf-postal-field>
-                            <label for="sf-postal-code">{{ __('storefront.checkout_postal_code_optional') }}</label>
+                            <label for="sf-postal-code">{{ __('storefront.checkout_postal_code') }}</label>
                             <input id="sf-postal-code" name="postal_code" type="text" autocomplete="postal-code" inputmode="numeric" maxlength="255" placeholder=" ">
                             <p class="sf-field-error" id="sf-err-postal_code" data-sf-error-for="postal_code" hidden></p>
                         </div>

@@ -340,6 +340,7 @@ final class CartGuestCookiePersistenceTest extends TestCase
             'delivery_type' => 'street_address',
             'country' => 'BG',
             'city' => 'Sofia',
+            'postal_code' => '1000', // COUR-2a.5: a delivery to an address needs its postcode
             'address_line_1' => 'Vitosha Blvd 1',
             ...$this->shippingPayload(),
         ];

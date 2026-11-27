@@ -160,7 +160,7 @@ class StorefrontCheckoutFloatingFieldsTest extends TestCase
         $this->assertStringContainsString('sf-place-row', $row->getAttribute('class'));
         $this->assertSame(0, $xpath->query('//*[@data-sf-address-fields]//input[@name="postal_code"]')->length, 'no longer in the street-address block');
         $this->assertSame(1, $xpath->query('//*[@data-sf-postal-field]//input[@name="postal_code"]')->length, 'the script toggles this holder');
-        $this->assertSame('Postal code (optional)', trim($xpath->query('//label[@for="sf-postal-code"]')->item(0)->textContent));
+        $this->assertSame('Postal code', trim($xpath->query('//label[@for="sf-postal-code"]')->item(0)->textContent));
         $this->assertSame(1, $xpath->query('//p[@id="sf-err-postal_code" and @data-sf-error-for="postal_code"]')->length, 'the same error holder');
         $this->assertSame(0, $xpath->query('//*[@data-sf-postal-field and @hidden]')->length, 'visible until the script hides it for a pick-up kind');
     }
@@ -169,7 +169,7 @@ class StorefrontCheckoutFloatingFieldsTest extends TestCase
     {
         app(SiteSettingsRepository::class)->set('site.locale', 'bg');
 
-        $this->assertSame('Пощенски код (по желание)', trim($this->dom()->query('//label[@for="sf-postal-code"]')->item(0)->textContent));
+        $this->assertSame('Пощенски код', trim($this->dom()->query('//label[@for="sf-postal-code"]')->item(0)->textContent));
     }
 
     public function test_the_invoice_city_and_postal_code_share_a_row(): void
