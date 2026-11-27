@@ -139,7 +139,7 @@ final class CourierSyncStaleSource implements NeedsAttentionSource
                 ? __('needs_attention.sources.courier_sync_stale.fact_failed', ['courier' => $name, 'code' => (string) ($failure?->error_code ?? $failure?->outcome)])
                 : __('needs_attention.sources.courier_sync_stale.fact_old', ['courier' => $name, 'hours' => self::STALE_AFTER_HOURS]),
             amount: null,
-            ageDays: StoreTimezone::daysBetween($startedOn, $this->timezone->today()),
+            ageDays: StoreTimezone::daysBetween($startedOn, $this->timezone->dayOf($now)), // the same instant as every other comparison here (Carbon::now), not the native clock
             startedOn: $startedOn,
             subject: $name,
         );
