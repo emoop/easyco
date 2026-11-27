@@ -753,6 +753,7 @@ function initCheckout(root) {
 
         applyRegionMode();
         followDeliveryCountry();
+        placeTextSet();
     }
 
     /** «Нов адрес»: the name and the phone come from the default address (always editable); the address itself starts empty. */
@@ -771,17 +772,33 @@ function initCheckout(root) {
             setValue(name, '');
             clearFieldError(name);
         });
+        placeTextSet();
     }
 
     function applySavedMode() {
         if (savedMode === 'saved') {
             form.setAttribute('data-sf-saved-mode', 'saved');
+
+            var row = saved.filter(function (candidate) { return candidate.id === savedId; })[0];
+
+            // a saved OFFICE or LOCKER keeps the place field on the page (the stylesheet hides the place only for a saved street address)
+            if (row !== undefined && isPickupRow(row)) {
+                form.setAttribute('data-sf-saved-kind', 'pickup');
+            } else {
+                form.removeAttribute('data-sf-saved-kind');
+            }
         } else {
             form.removeAttribute('data-sf-saved-mode');
+            form.removeAttribute('data-sf-saved-kind');
         }
     }
 
     function chooseSaved(row, mode, quoteAgain) {
+        // a saved street address without a postcode (saved before it was required) is opened for editing: the empty required field must be seen
+        if (mode === 'saved' && ! isPickupRow(row) && String(row.postal_code || '').trim() === '') {
+            mode = 'edit';
+        }
+
         savedId = row.id;
         savedMode = mode;
         fillFromRow(row);
@@ -792,6 +809,8 @@ function initCheckout(root) {
         if (quoteAgain) {
             scheduleQuote(true);
         }
+
+        ensurePlaceResolved();
     }
 
     function chooseNew(quoteAgain) {
@@ -907,6 +926,9 @@ function initCheckout(root) {
                     applySavedMode();
                     savedSignature = '';
                     renderSaved(eligibleSaved());
+                    // the saved office no longer stands: the list picker takes over, for the place the row filled in
+                    syncPicker();
+                    ensurePlaceResolved();
                 });
                 label.appendChild(edit);
             }
@@ -946,6 +968,11 @@ function initCheckout(root) {
         var row = saved.filter(function (candidate) { return candidate.id === savedId; })[0];
 
         if (row === undefined || eligibleSaved().indexOf(row) === -1) {
+            return null;
+        }
+
+        // a street address without a postcode never goes out as its id: the full fields go, and the server asks for the postcode
+        if (! isPickupRow(row) && String(row.postal_code || '').trim() === '') {
             return null;
         }
 
@@ -1286,6 +1313,8 @@ function initCheckout(root) {
         pickupBox.hidden = ! pickup;
 
         setRequired('address_line_1', street);
+        // COUR-2a.5: the postcode is required for a delivery to an address (the server checks it too); an office or a locker takes it from the place
+        setRequired('postal_code', street);
         syncPlace();
         PICKUP_FIELDS.forEach(function (name) {
             setRequired(name, pickup);
@@ -1296,6 +1325,7 @@ function initCheckout(root) {
         applyRegionMode();
         applyInvoice();
         refreshSaved();
+        ensurePlaceResolved();
     }
 
     /** A pick-up point belongs to ONE courier and kind: when either changes, what was typed for it is dropped. */
@@ -1359,14 +1389,28 @@ function initCheckout(root) {
     var anyIntegration = false;  // the last quote has at least one method with a courier list: only then (and only for BG) the place is a search
     var placeSearch = createPlaceSearch(form.elements.city, {
         // a suggestion was chosen: city, region and postcode are filled ONCE, then the real quote runs for that place
-        onChoose: function (item) {
-            form.elements.city.value = item.name;
-            form.elements.postal_code.value = item.postcode || '';
-            form.elements.region.value = item.region || '';
-            savedAuto = false;
+        onChoose: function (item, kept) {
+            if (kept) {
+                // COUR-2a.5: resolved from the place the form already held (a saved address): what it holds stays, only an empty postcode / region is filled
+                if (fieldValue('postal_code') === '') {
+                    form.elements.postal_code.value = item.postcode || '';
+                }
+
+                if (fieldValue('region') === '') {
+                    form.elements.region.value = item.region || '';
+                }
+            } else {
+                form.elements.city.value = item.name;
+                form.elements.postal_code.value = item.postcode || '';
+                form.elements.region.value = item.region || '';
+                savedAuto = false;
+            }
+
             clearFieldError('city');
+            clearFieldError('postal_code');
 
             if (picker !== null) {
+                picker.setPlaceHint(false);
                 picker.setSettlement(item);
             }
 
@@ -1388,6 +1432,52 @@ function initCheckout(root) {
             scheduleQuote(true);
         },
     });
+
+    var resolveTried = '';       // the (place, postcode, method) the page last tried to resolve: never tried twice unchanged
+
+    /** The place text was set by the PAGE (a saved address, «Нов адрес»), not typed: a choice that no longer fits is dropped, and the new text may be resolved. */
+    function placeTextSet() {
+        resolveTried = '';
+
+        if (placeSearch) {
+            placeSearch.sync();
+        }
+    }
+
+    /**
+     * COUR-2a.5, THE ONE RULE: whenever the list picker is needed (an integrated courier's office or locker is chosen) and the place field holds text but
+     * no resolved settlement, resolve it ONCE through the same settlements endpoint the field uses. Called by every trigger (the destination changing,
+     * the address book, a change / autofill of the field, a restored page) and by nothing else, so they cannot drift apart. A saved OFFICE that is
+     * chosen is the customer's choice already: its place is not resolved until «Промени».
+     */
+    function ensurePlaceResolved() {
+        if (! placeSearch || picker === null || ! placeSearch.engaged() || savedMode === 'saved') {
+            return;
+        }
+
+        if (! isPickupKind(deliveryKind()) || selection === null || selection.integration === null) {
+            return;
+        }
+
+        var text = fieldValue('city');
+
+        if (text === '' || placeSearch.chosen() !== null) {
+            return;
+        }
+
+        var attempt = [text, fieldValue('postal_code'), selection.id + ':' + selection.kind].join('|');
+
+        if (attempt === resolveTried) {
+            return;
+        }
+
+        resolveTried = attempt;
+        placeSearch.resolve({ postcode: fieldValue('postal_code'), region: fieldValue('region') }).then(function (outcome) {
+            if (picker !== null && outcome !== 'stale' && outcome !== 'skipped') {
+                picker.setPlaceHint(outcome === 'hint');
+            }
+        });
+    }
 
     /** Is the city a search (BG, and the shop has courier lists)? Called whenever the destination or the quote changes. */
     function syncPlace() {
@@ -1997,6 +2087,25 @@ function initCheckout(root) {
         setStatus(t('ck_price_changed', { price: priceText(price) }), 'price-changed');
     }
 
+    /** COUR-2a.5: the empty postcode of a delivery to an address: the translated error under the field and in the summary (never only the browser's bubble). */
+    function refusePostalCode() {
+        var holder = root.querySelector('[data-sf-error-for="postal_code"]');
+        var text = t('ck_postal_required');
+
+        holder.textContent = text;
+        holder.hidden = false;
+        form.elements.postal_code.setAttribute('aria-invalid', 'true');
+        form.elements.postal_code.setAttribute('aria-describedby', holder.id);
+        showSummary([{ field: 'postal_code', text: text }]);
+        form.elements.postal_code.focus();
+    }
+
+    // The browser checks `required` BEFORE the submit event and would show its own bubble, in the browser's language: the same translated error is shown instead.
+    form.elements.postal_code.addEventListener('invalid', function (event) {
+        event.preventDefault();
+        refusePostalCode();
+    });
+
     async function submit(event) {
         event.preventDefault();
 
@@ -2027,6 +2136,12 @@ function initCheckout(root) {
             form.elements.region.setAttribute('aria-invalid', 'true');
             form.elements.region.setAttribute('aria-describedby', holder.id);
             showSummary([{ field: 'region', text: text }]);
+
+            return;
+        }
+
+        if (selection.kind === 'address' && fieldValue('postal_code') === '') {
+            refusePostalCode();
 
             return;
         }
@@ -2158,6 +2273,26 @@ function initCheckout(root) {
             form.elements[name].addEventListener('change', onMove);
         }
     });
+
+    // COUR-2a.5: a place that is typed over while a saved office stands is the customer leaving that office: the same step as «Промени». A change event
+    // (the browser's autofill, a text left behind) and a page shown again from the history run the SAME resolve rule as everything else.
+    form.elements.city.addEventListener('input', function () {
+        if (savedMode === 'saved' && account !== null) {
+            savedMode = 'edit';
+            applySavedMode();
+            savedSignature = '';
+            renderSaved(eligibleSaved());
+            syncPicker();
+        }
+    });
+    form.elements.city.addEventListener('change', ensurePlaceResolved);
+
+    if (typeof window.addEventListener === 'function') {
+        window.addEventListener('pageshow', function () {
+            placeTextSet();
+            ensurePlaceResolved();
+        });
+    }
 
     // The order button's label follows the chosen payment method when its descriptor has its own (it must keep the obligation wording).
     form.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {

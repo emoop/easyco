@@ -197,7 +197,7 @@ class PickupPointContractTest extends TestCase
 
         $response = $this->postJson('/api/checkout', [
             'cart_id' => $cartId, 'email' => 'g@example.com', 'recipient_first_name' => 'G', 'recipient_last_name' => 'B', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
-            'delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha 1',
+            'delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Vitosha 1',
             'shipping_method_id' => $quoted['id'], 'quote_handle' => $quoted['handle'], 'expected_shipping_minor' => 500,
         ])->assertStatus(201);
 
@@ -300,7 +300,7 @@ class PickupPointContractTest extends TestCase
     {
         $this->lockerMethod();
         $cartId = $this->fillCart();
-        $street = ['delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha 1'];
+        $street = ['delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Vitosha 1'];
 
         foreach (['pickup_point_name', 'pickup_point_address'] as $field) {
             $this->postJson('/api/checkout', $this->checkoutPayload($cartId, array_merge($street, [$field => 'Something'])))->assertStatus(422)->assertJsonValidationErrors([$field]);

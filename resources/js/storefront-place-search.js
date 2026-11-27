@@ -7,12 +7,96 @@
 // the choice (`onCleared`). NEVER A DEAD END: «Не намирам населеното си място» (or a failing endpoint) leaves the field a plain text field, exactly as
 // before, and the server accepts it as it always did.
 //
+// COUR-2a.5: a place that is ALREADY in the field (a saved address, the browser's autofill, a restored page) has no resolved settlement either. `resolve`
+// runs the same search ONCE for that text and, when exactly one place is a confident match, chooses it as if the customer had; otherwise it guesses
+// nothing, opens the list for the typed text and says so. `sync` is the other half: a text changed by the PAGE (not typed) drops a choice that no longer fits.
+//
 // Everything that comes from the API goes on the page with textContent, never as markup.
 import { api, el, t } from './storefront-cart.js';
 
 var MIN_CHARS = 2;
 var DEBOUNCE_MS = 250;
 var uid = 0;
+
+var LATIN = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+    'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sht',
+    'ъ': 'a', 'ь': 'y', 'ю': 'yu', 'я': 'ya',
+};
+
+/**
+ * The same comparison key the server uses for a place name (App\Support\BgPostcodes::normalise): lower case, a leading «гр.» / «с.» / «град» / «село»
+ * dropped, Bulgarian streamlined transliteration, everything but letters and digits removed. «Харманли», «гр. Харманли» and «Harmanli» are one key.
+ */
+export function placeKey(text) {
+    var name = String(text === null || text === undefined ? '' : text).trim().toLowerCase();
+
+    name = name.replace(/^(гр\.|гр\s|с\.|град\s|село\s)\s*/, '');
+    name = name.replace(/ия(?=[\s-]|$)/g, 'ia');
+    name = name.replace(/[а-я]/g, function (letter) { return LATIN[letter] || ''; });
+
+    return name.replace(/[^a-z0-9]+/g, '');
+}
+
+/** A region typed or stored as «област Хасково», «обл. Хасково», «Haskovo oblast»: the name part, as a key. */
+function regionKey(text) {
+    var region = String(text === null || text === undefined ? '' : text).trim().toLowerCase();
+
+    region = region.replace(/(^|\s)(област|обл\.?|oblast|obl\.?|region|province)(?=\s|$)/g, ' ');
+
+    return placeKey(region);
+}
+
+/**
+ * The ONE confident match among the settlements found for `text`, or null (never a guess). The name must be the same place name; when several places
+ * carry it the postcode decides, then the region. A single place with that name is confident even when the saved postcode is missing.
+ *
+ * @param {Array<object>} found  items of the settlement search
+ * @param {string} text  what the field holds
+ * @param {{postcode: string, region: string}} wanted  what the form already holds besides the place
+ */
+export function confidentMatch(found, text, wanted) {
+    var key = placeKey(text);
+
+    if (key === '') {
+        return null;
+    }
+
+    var named = found.filter(function (item) { return placeKey(item.name) === key; });
+
+    if (named.length === 1) {
+        return named[0];
+    }
+
+    if (named.length === 0) {
+        return null;
+    }
+
+    var pool = named;
+    var postcode = String(wanted && wanted.postcode ? wanted.postcode : '').trim();
+
+    if (postcode !== '') {
+        var byPostcode = pool.filter(function (item) { return String(item.postcode || '') === postcode; });
+
+        if (byPostcode.length === 1) {
+            return byPostcode[0];
+        }
+
+        pool = byPostcode.length > 1 ? byPostcode : pool;
+    }
+
+    var region = regionKey(wanted && wanted.region ? wanted.region : '');
+
+    if (region !== '') {
+        var byRegion = pool.filter(function (item) { return item.region && regionKey(item.region) === region; });
+
+        if (byRegion.length === 1) {
+            return byRegion[0];
+        }
+    }
+
+    return null;
+}
 
 /**
  * @param {HTMLInputElement} input  the page's `city` input
@@ -168,13 +252,33 @@ export function createPlaceSearch(input, hooks) {
         setActive(-1);
     }
 
-    function choose(item) {
+    /** «обл. Хасково, 6450»: what the chosen place is, shown under the field (the postcode field itself is not shown for an office or a locker). */
+    function summary(item) {
+        return [item.region ? t('ck_pick_region', { region: item.region }) : '', item.postcode || ''].filter(Boolean).join(', ');
+    }
+
+    /** `keep`: the place was resolved from the text already in the field: the customer's own text stays, only the choice is made. */
+    function choose(item, keep) {
         chosen = item;
-        input.value = item.name;
+
+        if (! keep) {
+            input.value = item.name;
+        }
+
+        input.setAttribute('data-settlement-id', String(item.id));
         items = [];
         render();
-        say('');
-        hooks.onChoose(item);
+        say(summary(item));
+        hooks.onChoose(item, keep === true);
+    }
+
+    function forget() {
+        chosen = null;
+        input.removeAttribute('data-settlement-id');
+    }
+
+    function searchUrl(q) {
+        return '/api/shipping/settlements?kind=' + encodeURIComponent(kind) + (carrier === null ? '' : '&carrier=' + encodeURIComponent(carrier)) + '&q=' + encodeURIComponent(q);
     }
 
     async function run() {
@@ -191,11 +295,10 @@ export function createPlaceSearch(input, hooks) {
 
         say(t('ck_pick_loading'));
 
-        var url = '/api/shipping/settlements?kind=' + encodeURIComponent(kind) + (carrier === null ? '' : '&carrier=' + encodeURIComponent(carrier)) + '&q=' + encodeURIComponent(q);
         var result;
 
         try {
-            result = await api('GET', url);
+            result = await api('GET', searchUrl(q));
         } catch (e) {
             result = null;
         }
@@ -222,7 +325,7 @@ export function createPlaceSearch(input, hooks) {
 
         // a new text means a new place: what was chosen under the old one is dropped
         if (chosen !== null) {
-            chosen = null;
+            forget();
             hooks.onCleared();
         }
 
@@ -289,7 +392,7 @@ export function createPlaceSearch(input, hooks) {
 
             if (was !== on) {
                 if (! on) {
-                    chosen = null;
+                    forget();
                 }
 
                 applyMode();
@@ -299,9 +402,83 @@ export function createPlaceSearch(input, hooks) {
         /** The field is a search (not the plain text field): typing must not quote on every keystroke. */
         engaged: engaged,
 
-        /** The place chosen from the suggestions, or null (typed text, or nothing). */
+        /** The place chosen from the suggestions (or resolved from the text that was already there), or null (typed text, or nothing). */
         chosen: function () {
             return chosen;
+        },
+
+        /**
+         * The text was changed by the PAGE (a saved address filled in, the address book switched), not typed: a choice that no longer names the same
+         * place is dropped, and whatever list was open for the old text is closed. The same place (the same key) keeps its choice.
+         */
+        sync: function () {
+            seq += 1;
+            window.clearTimeout(timer);
+
+            if (chosen !== null && placeKey(chosen.name) !== placeKey(input.value)) {
+                forget();
+                say('');
+                hooks.onCleared();
+            }
+
+            if (chosen === null) {
+                items = [];
+                render();
+                say('');
+            }
+        },
+
+        /**
+         * Resolves the place that is ALREADY in the field, once (COUR-2a.5). One confident match is chosen as if the customer had chosen it (the text,
+         * the postcode and the region the form already holds are kept). Several or none: nothing is guessed, the list opens for the typed text and the
+         * hint says what to do. Never throws; a failing endpoint leaves today's plain text field.
+         *
+         * @param {{postcode: string, region: string}} wanted
+         * @returns {Promise<string>} 'resolved' | 'hint' | 'skipped' | 'stale' | 'failed'
+         */
+        resolve: async function (wanted) {
+            var q = input.value.trim();
+
+            if (! engaged() || chosen !== null || q.length < MIN_CHARS) {
+                return 'skipped';
+            }
+
+            var mine = ++seq;
+
+            window.clearTimeout(timer);
+            say(t('ck_pick_loading'));
+
+            var result;
+
+            try {
+                result = await api('GET', searchUrl(q));
+            } catch (e) {
+                result = null;
+            }
+
+            if (mine !== seq || chosen !== null || input.value.trim() !== q) {
+                return 'stale'; // the customer typed on, or chose, while it ran
+            }
+
+            if (result === null || result.status < 200 || result.status >= 300 || ! result.data || ! Array.isArray(result.data.data)) {
+                setManual(true, t('ck_place_failed'));
+
+                return 'failed';
+            }
+
+            var match = confidentMatch(result.data.data, q, wanted);
+
+            if (match !== null) {
+                choose(match, true);
+
+                return 'resolved';
+            }
+
+            items = result.data.data;
+            render();
+            say(t(items.length === 0 ? (carrier === null ? 'ck_place_no_match' : 'ck_pick_no_match') : 'ck_pick_choose_from_list'));
+
+            return 'hint';
         },
     };
 }

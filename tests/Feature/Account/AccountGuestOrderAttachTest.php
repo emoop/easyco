@@ -190,7 +190,7 @@ class AccountGuestOrderAttachTest extends TestCase
             'cart_id' => $cartId, 'email' => $email,
             'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer', 'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery', 'delivery_type' => 'street_address',
-            'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha Blvd 1',
+            'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Vitosha Blvd 1',
             ...$this->shippingPayload(),
         ];
     }

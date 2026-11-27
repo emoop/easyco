@@ -160,6 +160,7 @@ final class SandboxCheckoutFlowTest extends TestCase
             'delivery_type' => 'street_address',
             'country' => 'BG',
             'city' => 'Sofia',
+            'postal_code' => '1000', // COUR-2a.5: a delivery to an address needs its postcode
             'address_line_1' => 'Vitosha Blvd 1',
             ...$this->shippingPayload(),
         ], $overrides);
@@ -378,7 +379,7 @@ final class SandboxCheckoutFlowTest extends TestCase
             'quote_handle' => $method['handle'],
             'expected_shipping_minor' => $method['price']['minor'],
         ]);
-        unset($payload['city'], $payload['address_line_1']);
+        unset($payload['city'], $payload['postal_code'], $payload['address_line_1']);
 
         $response = $this->postJson('/api/checkout', $payload)->assertStatus(201);
 

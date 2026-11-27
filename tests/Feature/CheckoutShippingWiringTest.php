@@ -156,7 +156,7 @@ class CheckoutShippingWiringTest extends TestCase
     /** @return array<string, mixed> */
     private function street(): array
     {
-        return ['delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha Blvd 1'];
+        return ['delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Vitosha Blvd 1'];
     }
 
     /** @return array<string, mixed> */
@@ -168,7 +168,7 @@ class CheckoutShippingWiringTest extends TestCase
     /** The real quote for an address (the quote endpoint's own body), keyed by method id. @return array<string, array<string, mixed>> */
     private function quote(array $address): array
     {
-        $body = ['delivery_type' => $address['delivery_type'], 'country' => $address['country'], 'settlement' => $address['city'] ?? $address['settlement']];
+        $body = ['delivery_type' => $address['delivery_type'], 'country' => $address['country'], 'settlement' => $address['city'] ?? $address['settlement']] + (isset($address['postal_code']) ? ['postal_code' => $address['postal_code']] : []); // the handle is bound to the destination, the postcode included
         $methods = [];
 
         foreach ($this->postJson('/api/shipping/quote', $body)->assertOk()->json('methods') as $method) {

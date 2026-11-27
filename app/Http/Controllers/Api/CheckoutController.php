@@ -143,7 +143,19 @@ class CheckoutController extends Controller
 
         $validated = $request->validate($this->validationRules() + $this->choiceRules($terms) + $this->invoiceRules(), [
             'country.required_without' => __('delivery.country.required'),
+            'postal_code.required_if' => __('storefront.checkout_postal_code_required'),
         ]);
+
+        // COUR-2a.5: a SAVED street address goes out as `address_id`, so the rule above never sees its postcode. One saved before the postcode became
+        // required may have none: refused here the same way (a field error on `postal_code`), before anything is written. Another account's address
+        // or an unknown id is left to the orchestrator's own 404.
+        if ($account !== null && isset($validated['address_id'])) {
+            $saved = app(\EasyCo\Address\Contracts\AddressRepository::class)->findById((string) $validated['address_id']);
+
+            if ($saved !== null && $saved->accountId() === (string) $account->getAuthIdentifier() && $saved->deliveryType() === AddressDeliveryType::STREET_ADDRESS && trim((string) $saved->postalCode()) === '') {
+                throw ValidationException::withMessages(['postal_code' => [__('storefront.checkout_postal_code_required')]]);
+            }
+        }
 
         // Stored as E.164 (stage PH-1): ValidPhone has just judged the number against the delivery country (the saved address's own with `address_id`,
         // whose phone is the one the order takes).
@@ -564,7 +576,9 @@ class CheckoutController extends Controller
             'country' => ['required_without:address_id', 'string', new KnownCountryCode('delivery.country.invalid')],
             'city' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
             'address_line_1' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
-            'postal_code' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
+            // COUR-2a.5: REQUIRED for a delivery to an address (four digits for Bulgaria, any non-empty value elsewhere). A pick-up point carries none:
+            // its postcode comes from the settlement the point belongs to (the placement snapshot), never from the form.
+            'postal_code' => ['required_if:delivery_type,street_address', 'nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText(), new \App\Rules\DeliveryPostalCode()],
             'address_line_2' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
             // Delivery type is the only thing that may vary these three: they
             // keep their required_if/prohibited_if shape exactly. What is added

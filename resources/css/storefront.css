@@ -3260,9 +3260,9 @@ html[data-theme='dark'] {
         @apply min-w-0 flex-1 break-words;
     }
 
-    /* A saved address is chosen: its fields stay in the form (the script reads them) but are not shown. */
+    /* A saved address is chosen: its fields stay in the form (the script reads them) but are not shown. The place stays on the page for a saved office or locker (COUR-2a.5). */
     .sf-checkout-form[data-sf-saved-mode="saved"] .sf-fieldset:has(> .sf-saved) > .sf-field:has(#sf-country),
-    .sf-checkout-form[data-sf-saved-mode="saved"] .sf-fieldset:has(> .sf-saved) > .sf-place-row,
+    .sf-checkout-form[data-sf-saved-mode="saved"]:not([data-sf-saved-kind="pickup"]) .sf-fieldset:has(> .sf-saved) > .sf-place-row,
     .sf-checkout-form[data-sf-saved-mode="saved"] .sf-fieldset:has(> .sf-saved) > [data-sf-address-fields],
     .sf-checkout-form[data-sf-saved-mode="saved"] .sf-fieldset:has(> .sf-saved) > [data-sf-pickup-fields] {
         display: none;
