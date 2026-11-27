@@ -46,6 +46,11 @@ class StorefrontCheckoutResolveFlowTest extends TestCase
             'acct_resolve_a_saved_office_keeps_the_place_on_the_page_until_it_is_changed',
             'acct_resolve_typing_over_the_place_of_a_saved_office_leaves_it',
             'acct_resolve_a_saved_street_without_a_postcode_is_opened_and_asks_for_it_without_a_postcode',
+            // COUR-2a.6
+            'picker_resolve_nokind_says_which_kind_the_courier_has_there',
+            'picker_resolve_nopoints_says_the_courier_has_nothing_in_the_place',
+            'picker_resolve_a_typed_office_is_sent_under_the_courier_code',
+            'place_key_and_confident_match',
         ];
 
         return array_combine($names, array_map(static fn (string $name): array => [$name], $names));
@@ -72,5 +77,35 @@ class StorefrontCheckoutResolveFlowTest extends TestCase
 
         $this->assertSame(0, $code, implode("\n", $output));
         $this->assertStringContainsString('OK '.$scenario, implode("\n", $output));
+    }
+
+    /** COUR-2a.6: the script's place key and the server's name key (BgPostcodes::normalise) are ONE key: the same texts through both. */
+    public function test_the_script_place_key_and_the_servers_name_key_agree(): void
+    {
+        $node = trim((string) shell_exec(PHP_OS_FAMILY === 'Windows' ? 'where node 2>NUL' : 'command -v node'));
+
+        if ($node === '') {
+            $this->markTestSkipped('node is not installed');
+        }
+
+        $cases = [
+            'Стара Загора', 'стара загора', 'Стара  Загора', "Стара\u{00A0}Загора", ' Стара Загора ', 'гр. Стара Загора', 'гр.Стара Загора', "гр.\u{00A0}Стара Загора", "\u{00A0}гр. Стара Загора", 'гр Стара Загора',
+            "гр\u{00A0}Стара Загора", 'с. Дълго поле', 'село Дълго поле', 'град Велико Търново', 'Цар-Петрово', 'Цар - Петрово', 'Цар Петрово', 'София', 'Мария Луиза', 'Софи',
+            'София-град', 'Бания', 'гр. София', 'Стария', 'Щип', 'ЩИП', 'Юндола', 'Ямбол', 'Harmanli', 'Sofia', 'Стара З', '  ', 'гр.', 'с.', "\u{2009}Стара\u{2009}Загора", 'Горна Оряховица', 'Ѝ', '6000',
+        ];
+        $file = tempnam(sys_get_temp_dir(), 'ckpk');
+        $page = tempnam(sys_get_temp_dir(), 'ckpg').'.html';
+        file_put_contents($file, json_encode(['cases' => $cases, 'keys' => array_map(static fn (string $text): string => \App\Support\BgPostcodes::normalise($text), $cases)], JSON_UNESCAPED_UNICODE));
+        file_put_contents($page, $this->get('/checkout')->assertOk()->getContent());
+
+        try {
+            $output = [];
+            exec('node '.escapeshellarg(__DIR__.'/Js/checkout-flow.mjs').' '.escapeshellarg($page).' place_key_agrees_with_the_server '.escapeshellarg($file).' 2>&1', $output, $code);
+        } finally {
+            @unlink($file);
+            @unlink($page);
+        }
+
+        $this->assertSame(0, $code, implode("\n", $output));
     }
 }

@@ -223,11 +223,20 @@ final class AccountAreaController extends Controller
             'name' => trim($address->recipientFirstName().' '.$address->recipientLastName()),
             'phone' => $address->phone(),
             'lines' => array_values(array_filter($lines, static fn (?string $line): bool => $line !== null && trim($line) !== '')),
-            'courier' => $street || $address->carrierCode() === null ? null : ucfirst($address->carrierCode()),
+            'courier' => $street || $address->carrierCode() === null ? null : $this->courierText($address->carrierCode()),
             'kind' => $street ? null : $address->pickupPointKind(),
             'default' => $address->id() === $defaultId,
             'editUrl' => $street ? route('storefront.account.address.edit', ['id' => $address->id()], false) : null,
         ];
+    }
+
+    /** An integrated courier (by the ONE mapping: its code or its display name) is shown under its display name in the page's language; any other text as it was. */
+    private function courierText(string $stored): string
+    {
+        $directory = app(\App\Couriers\CourierDirectory::class);
+        $code = $directory->canonicalCode($stored);
+
+        return $code !== $stored || $directory->descriptor($stored) !== null ? \App\Couriers\CourierDirectory::label((string) $code) : ucfirst($stored);
     }
 
     /** the text of the notice the request asks for, from the closed list; anything else is no notice */

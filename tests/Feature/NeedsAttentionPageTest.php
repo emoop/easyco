@@ -1188,4 +1188,61 @@ class NeedsAttentionPageTest extends TestCase
 
         return $found;
     }
+
+    // =====================================================================================================
+    // COUR-2a.6: the wait is counted from the SAME clock as everything else (a frozen test clock is honoured)
+    // =====================================================================================================
+
+    /** The three sources count a wait from Carbon's clock, not PHP's native one: with the clock frozen far from the real date the wait is the frozen one. */
+    public function test_an_owed_refund_counts_its_wait_from_the_frozen_clock(): void
+    {
+        Carbon::setTestNow('2026-03-10 12:00:00');
+
+        try {
+            $this->owedRefundRow('order-frozen', 700, $this->instantOn('2026-03-07'));
+
+            $items = app(\App\NeedsAttention\OwedRefundSource::class)->page(1, 25);
+
+            $this->assertCount(1, $items);
+            $this->assertSame(3, $items[0]->ageDays);
+            $this->assertSame('2026-03-07', $items[0]->startedOn);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_an_unfinished_payment_counts_its_wait_from_the_frozen_clock(): void
+    {
+        Carbon::setTestNow('2026-03-10 12:00:00');
+
+        try {
+            $this->unfinishedPayment('order-frozen', 2500, 3 * 24 * 60);
+
+            $items = app(PaymentStepUnfinishedSource::class)->page(1, 25);
+
+            $this->assertCount(1, $items);
+            $this->assertSame(3, $items[0]->ageDays);
+            $this->assertSame('2026-03-07', $items[0]->startedOn);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_a_receipt_mismatch_counts_its_wait_from_the_frozen_clock(): void
+    {
+        Carbon::setTestNow('2026-03-10 12:00:00');
+
+        try {
+            $order = $this->bankOrder();
+            $this->appendReceipt($order['payment'], 6000, day: '2026-03-04');
+
+            $items = app(\App\NeedsAttention\ReceiptMismatchSource::class)->page(1, 25);
+
+            $this->assertCount(1, $items);
+            $this->assertSame(6, $items[0]->ageDays);
+            $this->assertSame('2026-03-04', $items[0]->startedOn);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
 }

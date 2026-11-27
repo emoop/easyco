@@ -9,6 +9,7 @@ use EasyCo\Payment\Enums\PaymentRefundStatus;
 use EasyCo\Payment\Enums\RefundChannel;
 use EasyCo\Pricing\Money;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -69,7 +70,8 @@ final class OwedRefundSource implements NeedsAttentionSource
             ->limit($perPage)
             ->get(self::COLUMNS);
 
-        $today = $this->timezone->today();
+        // the day comes from the same Carbon clock as every other time in the app (and in a test's frozen clock), not PHP's native one
+        $today = $this->timezone->dayOf(Carbon::now('UTC')->toDateTimeImmutable());
         $items = [];
 
         foreach ($rows as $row) {

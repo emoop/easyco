@@ -106,7 +106,7 @@ class StorefrontCheckoutScriptTest extends TestCase
     {
         $code = $this->code();
 
-        $this->assertStringContainsString('body.carrier_code = selection.carrier;', $code);
+        $this->assertStringContainsString('body.carrier_code = selection.integration !== null ? selection.integration : selection.carrier;', $code);
         $this->assertStringContainsString('carrier: courier.name === null ? option.method.name : courier.name,', $code, 'the chosen courier; a courier-less method names itself because the API requires the field');
         $this->assertStringNotContainsString('destination_kind', $code);
         $this->assertStringNotContainsString("fieldValue('carrier_code')", $code, 'carrier_code is never read from a form field');
@@ -141,7 +141,7 @@ class StorefrontCheckoutScriptTest extends TestCase
             'body.pickup_point_kind = selection.kind;',
             'body.region = fieldValue(\'region\');',
             'body.customer_note = note;',
-            'body.carrier_code = selection.carrier;',
+            'body.carrier_code = selection.integration !== null ? selection.integration : selection.carrier;',
         ] as $needle) {
             $this->assertStringContainsString($needle, $code, $needle);
         }

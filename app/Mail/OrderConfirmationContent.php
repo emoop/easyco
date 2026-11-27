@@ -197,10 +197,14 @@ final class OrderConfirmationContent
         $t = static fn (string $key): string => (string) __('mail.order.delivery.'.$key, [], $locale);
         $rows = [];
 
+        $directory = app(\App\Couriers\CourierDirectory::class);
+        $methodName = (string) $order->shippingMethodName();
+
         if ($order->shippingMethodName() !== null) {
             $method = MailHeader::clean($order->shippingMethodName(), 80);
             $courier = $order->shippingCourier();
-            $rows[] = [$t('method'), $courier === null || $courier === '' ? $method : $method.' / '.MailHeader::clean($courier, 40)];
+            // COUR-2a.6.1: the courier is not said twice: a method that already names it («Speedy до офис») gets no «/ Спиди»
+            $rows[] = [$t('method'), $courier === null || $courier === '' || $directory->mentions($methodName, $courier) ? $method : $method.' / '.MailHeader::clean((string) $directory->displayName($courier, $locale), 40)];
         }
 
         $rows[] = [$t('recipient'), MailHeader::clean($order->recipientFullName(), 120)];
@@ -213,8 +217,14 @@ final class OrderConfirmationContent
             ], static fn (?string $part): bool => $part !== null && $part !== '');
             $rows[] = [$t('pickup_point'), implode("\n", array_map(static fn (string $part): string => MailHeader::clean($part, 200), $point))];
 
-            if ($order->carrierCode() !== null && $order->carrierCode() !== '') {
-                $rows[] = [$t('courier'), MailHeader::clean($order->carrierCode(), 40)];
+            // COUR-2a.6.1: the courier's NAME in the mail's language (an order placed through the list stores its code), and only when the method row above
+            // does not already name the same courier (in its name, or in its «/ courier» suffix)
+            $carrier = $order->carrierCode();
+            $shownAbove = $carrier !== null && $carrier !== '' && ($directory->mentions($methodName, $carrier)
+                || ($order->shippingCourier() !== null && $order->shippingCourier() !== '' && \App\Couriers\CourierDirectory::nameKey((string) $directory->canonicalCode($order->shippingCourier())) === \App\Couriers\CourierDirectory::nameKey((string) $directory->canonicalCode($carrier))));
+
+            if ($carrier !== null && $carrier !== '' && ! $shownAbove) {
+                $rows[] = [$t('courier'), MailHeader::clean((string) $directory->displayName($carrier, $locale), 40)];
             }
 
             if ($order->pickupPointReference() !== null && $order->pickupPointReference() !== '') {

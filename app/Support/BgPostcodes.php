@@ -26,7 +26,8 @@ final class BgPostcodes
 
     public static function normalise(string $name): string
     {
-        $name = mb_strtolower(trim($name));
+        // every kind of space (a no-break one too) is one space BEFORE the trim and the prefix test: PHP's trim() leaves a no-break space, the script's does not
+        $name = mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $name)));
         $name = (string) preg_replace('/^(гр\.|гр\s|с\.|град\s|село\s)\s*/u', '', $name);
         // the streamlined system's one context rule: «ия» at the END of a word is «ia» (София = Sofia, Мария = Maria), everywhere else «iya»
         $name = (string) preg_replace('/ия(?=[\s\-]|$)/u', 'ia', $name);

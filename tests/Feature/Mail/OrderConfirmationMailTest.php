@@ -456,4 +456,77 @@ First: {{ customer_first_name }}
         $this->assertStringNotContainsString("\n", $row->to_email);
         $this->assertCount(0, $this->sent());
     }
+
+    /** An order for a pick-up point whose `carrier_code` is exactly what the request names (typed point: the order keeps the request's own value). */
+    private function placePickupMailOrder(string $carrier, string $point = 'Office Test 1'): void
+    {
+        $item = $this->mailVariation('Blue Shirt', '10.00', 20);
+        $cartId = (string) $this->postJson('/api/cart/lines', ['variation_id' => $item['variationId'], 'quantity' => 1])->assertStatus(201)->json('cart_id');
+
+        $this->postJson('/api/checkout', array_merge([
+            'cart_id' => $cartId, 'email' => 'buyer@example.com', 'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer', 'phone' => '+359888000000',
+            'payment_method' => 'cash_on_delivery', 'delivery_type' => 'pickup_point', 'country' => 'BG', 'carrier_code' => $carrier,
+            'pickup_point_address' => $point, 'settlement' => 'Харманли',
+        ], $this->shippingPayload(true)))->assertStatus(201);
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string}> stored carrier, what the mail shows, what it must not show */
+    public static function storedCouriers(): array
+    {
+        return [
+            'a code (an order placed through the list)' => ['speedy', 'Спиди', 'speedy'],
+            'a display name (an older order)' => ['Спиди', 'Спиди', 'speedy'],
+            'the other courier by code' => ['econt', 'Еконт', 'econt'],
+            'a plain courier name is shown as stored' => ['Local Courier', 'Local Courier', 'zzz-nothing'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('storedCouriers')]
+    public function test_the_confirmation_shows_the_couriers_name_whatever_the_order_stored(string $stored, string $shown, string $hidden): void
+    {
+        $this->setting('site.locale', 'bg');
+        $this->placePickupMailOrder($stored, 'Офис Тест 1');
+
+        $html = $this->email($this->sent()[0])->getHtmlBody();
+
+        $this->assertStringContainsString('Куриер', $html);
+        $this->assertStringContainsString($shown, $html);
+        $this->assertStringNotContainsString('>'.$hidden.'<', $html, 'the code is never printed as the courier');
+        $this->assertSame($stored, DB::table('orders')->orderByDesc('id')->value('carrier_code'), 'what the order stores is not rewritten');
+    }
+
+    public function test_the_courier_name_follows_the_language_of_the_mail(): void
+    {
+        $this->setting('site.locale', 'en');
+        $this->placePickupMailOrder('speedy');
+
+        $this->assertStringContainsString('Speedy', $this->email($this->sent()[0])->getHtmlBody());
+    }
+
+    /** @return array<string, array{0: string, 1: ?string, 2: string, 3: bool, 4: bool}> method name, method courier, stored carrier, «/ courier» suffix expected, «Куриер» row expected */
+    public static function repeatedCouriers(): array
+    {
+        return [
+            'the method name already names the courier: no suffix, no row' => ['Спиди до офис', 'Спиди', 'speedy', false, false],
+            'the English name in the method name counts too' => ['Speedy office', 'Спиди', 'speedy', false, false],
+            'the courier only as the method suffix: that is the one mention, no row' => ['До офис', 'Спиди', 'speedy', true, false],
+            'the method says nothing of the courier: the row stays' => ['До офис', null, 'speedy', false, true],
+            'a plain courier named in the method is not said twice' => ['Local Courier офис', 'Local Courier', 'Local Courier', false, false],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('repeatedCouriers')]
+    public function test_the_confirmation_does_not_say_the_courier_twice(string $methodName, ?string $courier, string $carrier, bool $suffix, bool $row): void
+    {
+        $this->setting('site.locale', 'bg');
+        DB::table('shipping_methods')->where('id', $this->shippingMethodId(true))->update(['name' => $methodName, 'courier' => $courier]);
+        $this->placePickupMailOrder($carrier, 'Офис Тест 1');
+
+        $html = $this->email($this->sent()[0])->getHtmlBody();
+        $name = $courier ?? $carrier;
+
+        $this->assertSame($suffix, str_contains($html, $methodName.' / '.($carrier === 'speedy' ? 'Спиди' : $name)), 'the «/ courier» suffix');
+        $this->assertSame($row ? 1 : 0, substr_count($html, 'Куриер'), 'the separate courier row');
+        $this->assertStringContainsString($methodName, $html);
+    }
 }

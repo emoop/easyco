@@ -264,6 +264,13 @@ return [
         'ck_item_count' => ':count × :name',
         'ck_pick_choose_place' => 'Изберете населеното място по-горе, за да видите офисите и автоматите там.',
         'ck_pick_choose_from_list' => 'Изберете населеното място от списъка, за да видите офисите.',
+        // COUR-2a.6: the place exists, but the courier has no point of this kind there (an empty answer says why)
+        'ck_place_no_kind_here' => 'В :place няма :missing на :courier. Изберете :other или друго населено място.',
+        'ck_place_no_points_here' => ':courier няма офиси и автомати в :place. Изберете друг куриер или друго населено място.',
+        'ck_missing_office' => 'офиси',
+        'ck_missing_locker' => 'автомати',
+        'ck_other_office' => 'офис',
+        'ck_other_locker' => 'автомат',
         'ck_place_no_match' => 'Не намерихме населено място с такова име или пощенски код.',
         'ck_place_manual' => 'Не намирам населеното си място',
         'ck_place_back' => 'Търси от списъка',

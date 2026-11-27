@@ -43,7 +43,8 @@ return [
         'address_line_1' => 'Address',
         'address_line_2' => 'Address (line 2)',
         'carrier_code' => 'Carrier',
-        'pickup_point_id' => 'Point no.',
+        // COUR-2a.6.1: OUR number of the point (support only); the courier's own office code is «Pickup point»
+        'pickup_point_id' => 'Internal point no.',
         'pickup_point_reference' => 'Pickup point',
         'pickup_point_name' => 'Office name',
         'pickup_point_address' => 'Office address',
