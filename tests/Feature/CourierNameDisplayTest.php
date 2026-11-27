@@ -64,7 +64,7 @@ class CourierNameDisplayTest extends TestCase
     }
 
     #[DataProvider('stored')]
-    public function test_the_admin_order_view_shows_the_name_and_the_stored_text_is_not_rewritten(string $stored, string $bg): void
+    public function test_the_admin_order_view_shows_the_name_and_the_stored_text_is_not_rewritten(string $stored, string $bg, string $en): void
     {
         $orderId = (string) $this->checkout($this->pickupFields(['carrier_code' => $stored]))->assertStatus(201)->json('order.id');
         $this->actingAsAdministrator();
@@ -89,7 +89,7 @@ class CourierNameDisplayTest extends TestCase
     }
 
     #[DataProvider('stored')]
-    public function test_the_account_address_book_shows_the_name(string $stored, string $bg): void
+    public function test_the_account_address_book_shows_the_name(string $stored, string $bg, string $en): void
     {
         $account = Account::register('courier-name@example.com', 'hashed-password');
         app(AccountRepository::class)->save($account);
