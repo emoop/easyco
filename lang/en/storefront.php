@@ -264,6 +264,13 @@ return [
         'ck_item_count' => ':count × :name',
         'ck_pick_choose_place' => 'Choose your place above to see the offices and lockers there.',
         'ck_pick_choose_from_list' => 'Choose your place from the list to see the offices.',
+        // COUR-2a.6: the place exists, but the courier has no point of this kind there (an empty answer says why)
+        'ck_place_no_kind_here' => 'There are no :missing from :courier in :place. Choose :other or another place.',
+        'ck_place_no_points_here' => ':courier has no offices or lockers in :place. Choose another courier or another place.',
+        'ck_missing_office' => 'offices',
+        'ck_missing_locker' => 'lockers',
+        'ck_other_office' => 'an office',
+        'ck_other_locker' => 'a locker',
         'ck_place_no_match' => 'We found no place with that name or postcode.',
         'ck_place_manual' => 'I cannot find my place',
         'ck_place_back' => 'Search from the list',

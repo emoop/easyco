@@ -272,10 +272,11 @@ for (const [courier, kinds] of [['Еконт', ['office', 'locker']], ['Спид
             expect(await pickMethod(page, courier, kind), `${courier} offers ${kind}`).toBe(true);
 
             if (courier === 'Еконт' && kind === 'locker') {
-                // Econt has no locker in Харманли (its lockers are elsewhere): nothing to resolve to. The field is on the page and says so, never an empty box.
-                await expect(page.locator('[data-sf-picker]')).toContainText('Изберете населеното място от списъка', { timeout: 20000 });
+                // Econt has offices but no locker in Харманли (COUR-2a.6): the place is right, so the field says what the courier does have there, in the field and in the office area.
+                const sentence = 'В Харманли няма автомати на Еконт. Изберете офис или друго населено място.';
+                await expect(page.locator('[data-sf-picker]')).toContainText(sentence, { timeout: 20000 });
                 expect((await dom(page)).placeVisible).toBe(true);
-                expect((await dom(page)).status).toContain('Не намерихме населено място');
+                expect((await dom(page)).status).toBe(sentence);
                 expect((await dom(page)).radios).toBe(0);
                 await page.screenshot({ path: `${OUT}/cour-2a5-saved-${courier}-${kind}.png`, fullPage: true });
                 return;
@@ -453,3 +454,40 @@ test('an order with the auto-resolved office carries OUR point id and no postcod
     expect('address_id' in captured).toBe(false);
     expect('pickup_point_address' in captured).toBe(false);
 });
+
+// COUR-2a.6: the empty answer says why. Skipped when the local data does not have the situation (a place with an Econt office but no Econt locker).
+test('a place that exists but has no locker of the courier says so (Econt + locker in Харманли), and a typed place that does not exist keeps the old text', async ({ page }) => {
+    const probe = await page.request.get('/api/shipping/settlements?carrier=econt&kind=locker&q=' + encodeURIComponent('Харманли'));
+    const answer = await probe.json();
+    test.skip(!(answer.data?.length === 0 && answer.meta?.place_exists === true && answer.meta?.other_kinds?.includes('office')), 'the local data has no place with an Econt office and no Econt locker');
+
+    await addToCart(page);
+    await page.goto('/checkout');
+    await refuseCookies(page);
+    await expect(page.locator('[data-sf-couriers] label').first()).toBeVisible({ timeout: 20000 });
+    expect(await pickMethod(page, 'Еконт', 'locker')).toBe(true);
+    await city(page).pressSequentially('Харманли', { delay: 60 });
+    const sentence = 'В Харманли няма автомати на Еконт. Изберете офис или друго населено място.';
+    await expect(city(page).locator('xpath=..').locator('[role="status"]')).toHaveText(sentence, { timeout: 15000 });
+    await page.screenshot({ path: `${OUT}/cour-2a6-no-locker-here.png`, fullPage: true });
+    await city(page).fill('');
+    await city(page).pressSequentially('Нищоград', { delay: 60 });
+    await expect(city(page).locator('xpath=..').locator('[role="status"]')).toHaveText('Не намерихме населено място с такова име, в което има офис или автомат.', { timeout: 15000 });
+});
+
+// COUR-2a.6: two-word places are found however they are typed (the real settlements table).
+for (const typed of ['Стара Загора', 'стара загора', 'Стара  Загора', 'Стара Загора', 'Стара З', 'гр. Стара Загора', '6000']) {
+    test(`two-word place typed as «${typed.replace(' ', '[nbsp]')}» is offered`, async ({ page }) => {
+        await addToCart(page);
+        await page.goto('/checkout');
+        await refuseCookies(page);
+        await expect(page.locator('[data-sf-couriers] label').first()).toBeVisible({ timeout: 20000 });
+        expect(await pickMethod(page, 'Еконт', 'office')).toBe(true);
+        await city(page).pressSequentially(typed, { delay: 50 });
+        const option = page.locator('[role="listbox"] [role="option"]', { hasText: 'Стара Загора' }).first();
+        await expect(option).toBeVisible({ timeout: 15000 });
+        await option.click();
+        await expect(offices(page).first()).toBeVisible({ timeout: 20000 });
+        expect((await dom(page)).city).toBe('Стара Загора');
+    });
+}

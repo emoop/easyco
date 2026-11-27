@@ -197,7 +197,8 @@ const savedAddresses = [
     addr(2, { recipient_first_name: 'Мария', recipient_last_name: 'Иванова', phone: '+359888222222', city: 'Plovdiv', postal_code: '4000' }),
     addr(3), addr(4),
     point(11, 'Еконт', 'office', 'Econt Center 1'),
-    point(12, 'Спиди', 'office', 'Speedy Office 2'),
+    // COUR-2a.6: the API answers a saved point of an INTEGRATED courier with its code (the one mapping is the server's), whatever it was stored under
+    point(12, scenario.includes('_resolve_') ? 'speedy' : 'Спиди', 'office', 'Speedy Office 2'),
     point(13, 'Еконт', 'locker', 'Econt Locker 3'),
 ].slice(0, scenario.includes('without_a_saved_point') ? 4 : 7);
 
@@ -301,6 +302,14 @@ globalThis.fetch = async (path, init = {}) => {
             { id: '77', name: 'Пловдив', region: 'Пловдив', postcode: '4000', is_split: false, points: 2 },
             { id: '78', name: 'Пловдив', region: 'Хасково', postcode: '6300', is_split: false, points: 1 },
         ];
+
+        // COUR-2a.6: an EMPTY answer says why: the place exists but this courier has no point of this kind there (`_nokind_`: it has the other kind; `_nopoints_`: none)
+        if (scenario.includes('_nokind_') || scenario.includes('_nopoints_')) {
+            const asked = decodeURIComponent((path.match(/[?&]q=([^&]*)/) || [, ''])[1]).trim().toLowerCase();
+            const known = 'харманли'.startsWith(asked) && asked === 'харманли';
+
+            return { status: 200, json: async () => ({ data: [], meta: known ? (scenario.includes('_nokind_') ? { place_exists: true, other_kinds: ['locker'] } : { place_exists: true }) : { place_exists: false } }) };
+        }
 
         // COUR-2a.5: the resolve scenarios answer like the real search: by the start of the name or of the postcode; `one_match` has only the first place
         if (scenario.includes('_resolve_')) {
@@ -2670,6 +2679,122 @@ const scenarios = {
         await submit();
         assert.equal('address_id' in lastCheckout().body, false, 'the full fields go, not the id of an incomplete address');
         assert.equal(lastCheckout().body.postal_code, '2000');
+    },
+
+    // ----------------------------------------------------------------------------------------------------------------------------------- COUR-2a.6
+    // the place EXISTS, the courier has no point of this kind there: the sentence says so (the field and the office area), for the automatic resolve and for typing
+    async picker_resolve_nokind_says_which_kind_the_courier_has_there() {
+        await flush();
+        const city = form.elements.city;
+        const expected = T('ck_place_no_kind_here').replace(':place', 'Харманли').replace(':courier', 'Спиди').replace(':missing', T('ck_missing_office')).replace(':other', T('ck_other_locker'));
+        const status = () => city.parent.querySelector('[role="status"]').textContent;
+
+        set('city', 'Харманли');
+        choose(courierRows()[1].radio);   // Speedy, office
+        await flush();
+
+        assert.equal(expected.includes(':'), false, 'every placeholder is filled');
+        assert.equal(status(), expected, 'the automatic resolve');
+        assert.ok(q('[data-sf-picker]').textContent.includes(expected), 'the office area says the same sentence');
+        assert.equal(q('[data-sf-picker]').textContent.includes(T('ck_pick_choose_from_list')), false, 'there is nothing to choose from the list');
+        assert.equal(city.attrs['data-settlement-id'], undefined);
+
+        // typing the same text: the same sentence, from the request the search makes anyway (no extra one)
+        city.value = 'Харманли ';
+        city.dispatch('input');
+        city.value = 'Харманли';
+        city.dispatch('input');
+        await flush();
+        const asked = placeSearchRequests().length;
+
+        assert.equal(status(), expected, 'typing');
+        assert.equal(placeSearchRequests().length, asked);
+
+        // a place that does not exist keeps today's text
+        city.value = 'Нищоград';
+        city.dispatch('input');
+        await flush();
+        assert.equal(status(), T('ck_pick_no_match'));
+    },
+
+    async picker_resolve_nopoints_says_the_courier_has_nothing_in_the_place() {
+        await flush();
+        const city = form.elements.city;
+        const expected = T('ck_place_no_points_here').replace(':place', 'Харманли').replace(':courier', 'Спиди');
+
+        set('city', 'Харманли');
+        choose(courierRows()[1].radio);
+        await flush();
+
+        assert.equal(city.parent.querySelector('[role="status"]').textContent, expected);
+        assert.ok(q('[data-sf-picker]').textContent.includes(expected));
+        assert.match(expected, /Спиди/);
+        assert.match(expected, /Харманли/);
+    },
+
+    // an integrated courier is sent (and so saved) under its CODE; a method without an integration keeps its name; a saved point is matched by the code
+    async picker_resolve_a_typed_office_is_sent_under_the_courier_code() {
+        await flush();
+        choose(courierRows()[1].radio);   // Speedy: integration speedy
+        form.elements.city.parent.querySelectorAll('button').find((b) => b.textContent === T('ck_place_manual')).dispatch('click');
+        await flush();
+        await typeInto('city', 'Нейкое село');
+        fillContact();
+        fillPoint('S-9');
+        checkoutResponse = REFUSED;   // the form stays usable: the button is pressed twice
+        await submit();
+
+        assert.equal(lastCheckout().body.carrier_code, 'speedy', 'the code, not «Спиди»');
+        assert.equal(lastCheckout().body.pickup_point_manual, true);
+
+        // Econt has no integration in this scenario: its name stays, no code is invented
+        choose(courierRows()[0].radio);
+        chooseKind('4:office');
+        await flush();
+        fillPoint('E-9');
+        await submit();
+        assert.equal(checkoutPosts().length, 2);
+        assert.equal(lastCheckout().body.carrier_code, 'Еконт');
+    },
+
+    // the pure rules: the key and the confident match for two-word, hyphenated and spaced names (the SAME key the server's name_key has)
+    async place_key_and_confident_match() {
+        const { placeKey, confidentMatch } = await import(new URL('../../../../resources/js/storefront-place-search.js', import.meta.url));
+
+        for (const typed of ['Стара Загора', 'стара загора', 'Стара  Загора', 'Стара\u00A0Загора', ' Стара Загора ', 'гр. Стара Загора', 'гр.\u00A0Стара Загора', '\u00A0гр. Стара Загора', 'гр Стара Загора', 'Stara Zagora', 'STARA ZAGORA']) {
+            assert.equal(placeKey(typed), 'starazagora', JSON.stringify(typed));
+        }
+
+        assert.equal(placeKey('Велико Търново'), 'velikotarnovo');
+        assert.equal(placeKey('Нова Загора'), 'novazagora');
+        assert.equal(placeKey('Горна Оряховица'), 'gornaoryahovitsa');
+        assert.equal(placeKey('Дълго поле'), 'dalgopole');
+        assert.equal(placeKey('с. Дълго поле'), 'dalgopole');
+        assert.equal(placeKey('Цар-Петрово'), 'tsarpetrovo');
+        assert.equal(placeKey('Цар - Петрово'), 'tsarpetrovo');
+        assert.equal(placeKey('Цар Петрово'), 'tsarpetrovo');
+        assert.equal(placeKey('София'), 'sofia', 'a word-final «ия» is «ia»');
+        assert.equal(placeKey('  '), '');
+
+        const item = (id, name, region, postcode) => ({ id: String(id), name, region, postcode });
+        const places = [item(1, 'Стара Загора', 'Стара Загора', '6000'), item(2, 'Нова Загора', 'Сливен', '8900')];
+
+        for (const typed of ['Стара  Загора', 'гр. Стара Загора', 'стара\u00A0загора']) {
+            assert.equal(confidentMatch(places, typed, { postcode: '', region: '' }).id, '1', typed);
+        }
+
+        assert.equal(confidentMatch(places, 'Стара З', { postcode: '', region: '' }), null, 'a start of a name is not a place: nothing is guessed');
+        assert.equal(confidentMatch([item(1, 'Бяла', 'Русе', '7100'), item(2, 'Бяла', 'Варна', '9101')], 'Бяла', { postcode: '9101', region: '' }).id, '2');
+        assert.equal(confidentMatch([item(1, 'Бяла', 'Русе', '7100'), item(2, 'Бяла', 'Варна', '9101')], 'Бяла', { postcode: '', region: 'обл. Русе' }).id, '1');
+        assert.equal(confidentMatch([item(1, 'Бяла', 'Русе', '7100'), item(2, 'Бяла', 'Варна', '9101')], 'Бяла', { postcode: '', region: '' }), null);
+    },
+
+    // the script's key and the server's (BgPostcodes::normalise) agree on every text the PHP test hands over (extraPath: {cases, keys})
+    async place_key_agrees_with_the_server() {
+        const { placeKey } = await import(new URL('../../../../resources/js/storefront-place-search.js', import.meta.url));
+        const { cases, keys } = JSON.parse(readFileSync(extraPath, 'utf8'));
+
+        cases.forEach((text, i) => assert.equal(placeKey(text), keys[i], JSON.stringify(text)));
     },
 
     async acct_logout_posts_and_reloads_the_page() {

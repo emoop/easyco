@@ -216,7 +216,7 @@ final class CheckoutOrchestrator
         // for an office-only method and a locker, shipping_price_changed / shipping_quote_expired for a handle quoted for another kind).
         // A method that names no courier (a local pick-up method) serves any saved point; a typed point is not judged here: it carries no stored courier to disagree with.
         if ($savedAddress !== null && $selection->courier !== null && $savedAddress->deliveryType() === \EasyCo\Address\Enums\AddressDeliveryType::PICKUP_POINT && $savedAddress->carrierCode() !== null
-            && mb_strtolower(trim($savedAddress->carrierCode())) !== mb_strtolower(trim($selection->courier))) {
+            && ! $this->sameCourier($savedAddress->carrierCode(), $selection->courier)) {
             throw ShippingRefusal::because(ShippingRefusalReason::PICKUP_MISMATCH, 'The saved pick-up point belongs to another courier than the chosen shipping method.');
         }
 
@@ -367,6 +367,14 @@ final class CheckoutOrchestrator
         $kind = $pickup ? $this->pickupKinds->kindFor((string) $input->carrierCode, $input->pickupPointReference, $input->pickupPointKind) : null;
 
         return QuoteDestination::forAddress($input->deliveryType, (string) $input->country, $pickup ? $input->settlement : $input->city, $input->postalCode, $kind);
+    }
+
+    /** COUR-2a.6: one courier by the ONE mapping (an integrated courier's code and its display name are the same courier); any other text by case and spacing. */
+    private function sameCourier(string $stored, string $chosen): bool
+    {
+        $directory = app(\App\Couriers\CourierDirectory::class);
+
+        return \App\Couriers\CourierDirectory::nameKey((string) $directory->canonicalCode($stored)) === \App\Couriers\CourierDirectory::nameKey((string) $directory->canonicalCode($chosen));
     }
 
     /** The claim on this request's cart, iff the requester is the identity it was claimed by. */
@@ -584,7 +592,8 @@ final class CheckoutOrchestrator
             postalCode: $address->postalCode(),
             addressLine1: $address->addressLine1(),
             addressLine2: $address->addressLine2(),
-            carrierCode: $address->carrierCode(),
+            // COUR-2a.6: the ORDER records what the request said (as before); only the saved ADDRESS is stored under the courier's code
+            carrierCode: $input->carrierCode ?? $address->carrierCode(),
             pickupPointReference: $address->pickupPointReference(),
             settlement: $address->settlement(),
             pickupPointName: $address->pickupPointName(),

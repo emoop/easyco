@@ -108,6 +108,8 @@ export function createPlaceSearch(input, hooks) {
     var base = 'sf-pl' + uid;
     var enabled = false;      // BG and a courier list exists: the field is a combobox
     var carrier = null;       // the courier whose places are asked for (office / locker), or null = every settlement
+    var carrierName = '';     // the courier's name as the customer knows it (for the «no lockers here» sentence)
+    var lastMessage = '';     // the last empty-answer sentence (the office area shows the same one)
     var kind = 'address';
     var manual = false;       // «Не намирам населеното си място»: a plain text field again
     var chosen = null;
@@ -277,6 +279,33 @@ export function createPlaceSearch(input, hooks) {
         input.removeAttribute('data-settlement-id');
     }
 
+    /**
+     * What an EMPTY answer says (COUR-2a.6). The answer's `meta` tells a place that is wrong from a place that is right where this courier has no point of this
+     * kind: «В Харманли няма автомати на Еконт. Изберете офис или друго населено място.» / «Еконт няма офиси и автомати в Харманли …» / the old text.
+     */
+    function emptyText(meta, typed) {
+        if (carrier === null) {
+            return t('ck_place_no_match');
+        }
+
+        if (! meta || meta.place_exists !== true) {
+            return t('ck_pick_no_match');
+        }
+
+        var others = Array.isArray(meta.other_kinds) ? meta.other_kinds.filter(function (kind) { return kind === 'office' || kind === 'locker'; }) : [];
+
+        if (others.length === 0 || kind === 'pickup') {
+            return t('ck_place_no_points_here', { courier: carrierName, place: typed });
+        }
+
+        return t('ck_place_no_kind_here', {
+            courier: carrierName,
+            place: typed,
+            missing: t(kind === 'locker' ? 'ck_missing_locker' : 'ck_missing_office'),
+            other: t(others[0] === 'locker' ? 'ck_other_locker' : 'ck_other_office'),
+        });
+    }
+
     function searchUrl(q) {
         return '/api/shipping/settlements?kind=' + encodeURIComponent(kind) + (carrier === null ? '' : '&carrier=' + encodeURIComponent(carrier)) + '&q=' + encodeURIComponent(q);
     }
@@ -315,7 +344,8 @@ export function createPlaceSearch(input, hooks) {
 
         items = result.data.data;
         render();
-        say(items.length === 0 ? t(carrier === null ? 'ck_place_no_match' : 'ck_pick_no_match') : '');
+        lastMessage = items.length === 0 ? emptyText(result.data.meta, q) : '';
+        say(lastMessage);
     }
 
     input.addEventListener('input', function () {
@@ -382,13 +412,15 @@ export function createPlaceSearch(input, hooks) {
          * @param {boolean} on  BG and the shop has courier lists: the field is a combobox
          * @param {?string} courier  the courier of the chosen destination when it is an office / locker with a list, else null
          * @param {string} wantedKind  'office' | 'locker' | 'address'
+         * @param {string} [courierDisplayName]  the courier as the customer knows it
          */
-        configure: function (on, courier, wantedKind) {
+        configure: function (on, courier, wantedKind, courierDisplayName) {
             var was = enabled;
 
             enabled = on;
             carrier = courier;
             kind = wantedKind;
+            carrierName = courierDisplayName || '';
 
             if (was !== on) {
                 if (! on) {
@@ -401,6 +433,11 @@ export function createPlaceSearch(input, hooks) {
 
         /** The field is a search (not the plain text field): typing must not quote on every keystroke. */
         engaged: engaged,
+
+        /** The last sentence an empty answer produced (the office area shows the same one). */
+        message: function () {
+            return lastMessage;
+        },
 
         /** The place chosen from the suggestions (or resolved from the text that was already there), or null (typed text, or nothing). */
         chosen: function () {
@@ -434,7 +471,7 @@ export function createPlaceSearch(input, hooks) {
          * hint says what to do. Never throws; a failing endpoint leaves today's plain text field.
          *
          * @param {{postcode: string, region: string}} wanted
-         * @returns {Promise<string>} 'resolved' | 'hint' | 'skipped' | 'stale' | 'failed'
+         * @returns {Promise<string>} 'resolved' | 'hint' | 'empty' (the place is known, the courier has no point of this kind there) | 'skipped' | 'stale' | 'failed'
          */
         resolve: async function (wanted) {
             var q = input.value.trim();
@@ -476,7 +513,17 @@ export function createPlaceSearch(input, hooks) {
 
             items = result.data.data;
             render();
-            say(t(items.length === 0 ? (carrier === null ? 'ck_place_no_match' : 'ck_pick_no_match') : 'ck_pick_choose_from_list'));
+
+            if (items.length === 0) {
+                lastMessage = emptyText(result.data.meta, q);
+                say(lastMessage);
+
+                // the place IS known: the office area says what is missing there, not «choose from the list» (there is nothing to choose)
+                return result.data.meta && result.data.meta.place_exists === true && carrier !== null ? 'empty' : 'hint';
+            }
+
+            lastMessage = '';
+            say(t('ck_pick_choose_from_list'));
 
             return 'hint';
         },

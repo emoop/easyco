@@ -694,6 +694,14 @@ function initCheckout(root) {
         return saved.length > 0 ? saved[0] : null;
     }
 
+    /**
+     * COUR-2a.6: does the saved point belong to the courier of the chosen method? An integrated courier is its CODE (the API answers a saved point with the code
+     * even when it was stored under the display name: the one mapping is the server's); any other courier is its name, as before.
+     */
+    function sameCourier(row) {
+        return selection.integration !== null ? sameText(row.carrier_code, selection.integration) : sameText(row.carrier_code, selection.carrier);
+    }
+
     /** The saved addresses the chosen delivery can use: street addresses before (or without) an office or locker; for one, only the points of the SAME courier and kind. */
     function eligibleSaved() {
         var kind = deliveryKind();
@@ -702,7 +710,7 @@ function initCheckout(root) {
                 return ! isPickupRow(row);
             }
 
-            return isPickupRow(row) && sameText(row.carrier_code, selection.carrier) && row.pickup_point_kind === kind;
+            return isPickupRow(row) && sameCourier(row) && row.pickup_point_kind === kind;
         });
 
         // the default first, the others in the order the API gave them
@@ -1474,7 +1482,7 @@ function initCheckout(root) {
         resolveTried = attempt;
         placeSearch.resolve({ postcode: fieldValue('postal_code'), region: fieldValue('region') }).then(function (outcome) {
             if (picker !== null && outcome !== 'stale' && outcome !== 'skipped') {
-                picker.setPlaceHint(outcome === 'hint');
+                picker.setPlaceHint(outcome === 'empty' ? placeSearch.message() : outcome === 'hint');
             }
         });
     }
@@ -1488,7 +1496,7 @@ function initCheckout(root) {
         var pickup = isPickupKind(deliveryKind());
         var integration = pickup && selection !== null ? selection.integration : null;
 
-        placeSearch.configure(fieldValue('country') === 'BG' && anyIntegration, integration, integration !== null ? deliveryKind() : 'address');
+        placeSearch.configure(fieldValue('country') === 'BG' && anyIntegration, integration, integration !== null ? deliveryKind() : 'address', pickup && selection !== null ? selection.carrier : '');
     }
 
     /** The ONE request: every kind of every courier. No place yet = a preview; the pick-up kind is never sent with `all`. */
@@ -1973,7 +1981,8 @@ function initCheckout(root) {
         } else {
             // The place the pick-up point was quoted for is the point's settlement; the courier is the one the customer chose.
             body.settlement = fieldValue('city');
-            body.carrier_code = selection.carrier;
+            // COUR-2a.6: an integrated courier is sent (and so saved) under its CODE; a method without an integration keeps the name, no code is invented
+            body.carrier_code = selection.integration !== null ? selection.integration : selection.carrier;
             // The kind the customer chose (a client claim until the courier stage; the handle is bound to it).
             body.pickup_point_kind = selection.kind;
 

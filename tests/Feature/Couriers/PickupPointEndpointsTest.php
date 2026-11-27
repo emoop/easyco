@@ -352,4 +352,124 @@ class PickupPointEndpointsTest extends TestCase
         $this->getJson('/api/shipping/settlements?kind=office&q=харм')->assertStatus(422);
         $this->getJson('/api/shipping/settlements?'.http_build_query(['kind' => 'address', 'q' => 'х']))->assertStatus(422);
     }
+
+    // --- COUR-2a.6: two-word and hyphenated places -----------------------------------------------------------------
+
+    /** @return array<string, array{0: string, 1: string, 2: string}> typed text, the place it must find, its postcode */
+    public static function twoWordPlaces(): array
+    {
+        $cases = [];
+
+        foreach ([
+            ['Стара Загора', '6000', ['стара загора', 'Стара  Загора', "Стара\u{00A0}Загора", "Стара \u{00A0} Загора", ' Стара Загора ', 'Стара З', 'стара з', 'гр. Стара Загора', 'гр.Стара Загора', "гр.\u{00A0}Стара Загора", "\u{00A0}Стара Загора", 'Stara Zagora', 'stara z', '6000']],
+            ['Велико Търново', '5000', ['велико търново', 'Велико  Търново', "Велико\u{00A0}Търново", 'Велико Т', 'гр. Велико Търново', 'Veliko Tarnovo', '5000']],
+            ['Нова Загора', '8900', ['нова загора', 'Нова  Загора', "Нова\u{00A0}Загора", 'Нова З', 'гр. Нова Загора', '8900']],
+            ['Горна Оряховица', '5100', ['горна оряховица', 'Горна  Оряховица', "Горна\u{00A0}Оряховица", 'Горна О', 'гр. Горна Оряховица', '5100']],
+            ['Дълго поле', '3756', ['дълго поле', 'Дълго  поле', "Дълго\u{00A0}поле", 'Дълго п', 'с. Дълго поле', '3756']],
+            ['Цар-Петрово', '7600', ['цар-петрово', 'Цар Петрово', 'Цар - Петрово', 'цар-п', 'с. Цар-Петрово', '7600']],
+        ] as [$name, $postcode, $typed]) {
+            foreach ($typed as $text) {
+                $cases[$name.' <- '.str_replace("\u{00A0}", '[nbsp]', $text)] = [$text, $name, $postcode];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('twoWordPlaces')]
+    public function test_a_two_word_or_hyphenated_place_is_found_however_it_is_typed(string $typed, string $name, string $postcode): void
+    {
+        $id = $this->settlement($name, 'PDV', [$postcode]);
+        $this->point($id);
+        $this->settlement($name.' Друго', 'VAR', ['9999']);   // a longer name that starts the same: must not hide the right one
+
+        $found = $this->search($typed);
+
+        $this->assertContains((string) $id, array_column($found, 'id'), $typed);
+    }
+
+    public function test_the_exact_name_is_listed_before_a_longer_one_that_starts_with_it(): void
+    {
+        $short = $this->settlement('Нова Загора', 'SLV', ['8900']);
+        $long = $this->settlement('Нова Загора Север', 'SLV', ['8901']);
+        $this->point($short);
+        $this->point($long);
+
+        $this->assertSame((string) $short, $this->search('Нова  Загора')[0]['id']);
+    }
+
+    // --- COUR-2a.6: an empty answer says WHY (meta) ----------------------------------------------------------------
+
+    /** @return array<string, mixed> */
+    private function raw(string $q, string $carrier = 'econt', string $kind = 'locker'): array
+    {
+        return $this->getJson('/api/shipping/settlements?'.http_build_query(['carrier' => $carrier, 'kind' => $kind, 'q' => $q]))->assertOk()->json();
+    }
+
+    public function test_a_non_empty_answer_has_no_meta_and_the_data_shape_is_unchanged(): void
+    {
+        $id = $this->settlement('Харманли', 'HKV', ['6450']);
+        $this->point($id, ['carrier_code' => 'econt', 'kind' => 'office']);
+
+        $answer = $this->raw('Харманли', 'econt', 'office');
+
+        $this->assertSame(['data'], array_keys($answer));
+        $this->assertSame(['id', 'is_split', 'name', 'points', 'postcode', 'region', 'type'], collect(array_keys($answer['data'][0]))->sort()->values()->all());
+    }
+
+    public function test_an_empty_answer_for_a_place_that_exists_names_the_kinds_the_courier_does_offer_there(): void
+    {
+        $id = $this->settlement('Харманли', 'HKV', ['6450']);
+        $this->point($id, ['carrier_code' => 'econt', 'kind' => 'office']);
+
+        foreach (['Харманли', 'харманли', 'гр. Харманли', '6450'] as $q) {
+            $answer = $this->raw($q, 'econt', 'locker');
+
+            $this->assertSame([], $answer['data'], $q);
+            $this->assertSame(['place_exists' => true, 'other_kinds' => ['office']], $answer['meta'], $q);
+        }
+    }
+
+    public function test_an_empty_answer_for_a_place_where_the_courier_has_nothing_says_the_place_exists_and_no_kinds(): void
+    {
+        $id = $this->settlement('Харманли', 'HKV', ['6450']);
+        $this->point($id, ['carrier_code' => 'boxnow', 'kind' => 'locker']);
+
+        $this->assertSame(['place_exists' => true], $this->raw('Харманли', 'econt', 'office')['meta']);
+        // an inactive point is not an offer
+        $this->point($id, ['carrier_code' => 'econt', 'kind' => 'office', 'is_active' => 0]);
+        $this->assertSame(['place_exists' => true], $this->raw('Харманли', 'econt', 'locker')['meta']);
+    }
+
+    public function test_an_unknown_place_is_not_found_and_a_partly_typed_name_is_not_a_place_yet(): void
+    {
+        $id = $this->settlement('Харманли', 'HKV', ['6450']);
+        $this->point($id, ['carrier_code' => 'econt', 'kind' => 'office']);
+
+        $this->assertSame(['place_exists' => false], $this->raw('Нищоград', 'econt', 'locker')['meta']);
+        $this->assertSame(['place_exists' => false], $this->raw('Харм', 'econt', 'locker')['meta'], 'a prefix is not the place: the old text, not «no lockers in Харм»');
+        $this->assertSame(['place_exists' => false], $this->raw('9999', 'econt', 'locker')['meta']);
+    }
+
+    public function test_the_meta_adds_no_query_to_an_answer_that_has_results(): void
+    {
+        $id = $this->settlement('Харманли', 'HKV', ['6450']);
+        $this->point($id, ['carrier_code' => 'econt', 'kind' => 'office']);
+
+        DB::enableQueryLog();
+        $this->getJson('/api/shipping/settlements?'.http_build_query(['carrier' => 'econt', 'kind' => 'office', 'q' => 'Харманли']))->assertOk();
+        $withResults = count(DB::getQueryLog());
+        DB::flushQueryLog();
+        $this->getJson('/api/shipping/settlements?'.http_build_query(['carrier' => 'econt', 'kind' => 'locker', 'q' => 'Харманли']))->assertOk();
+        $empty = count(DB::getQueryLog());
+
+        $this->assertGreaterThan($withResults, $empty, 'the extra work happens only for an empty answer');
+    }
+
+    public function test_the_meta_keeps_the_validation_cache_header_and_courier_gate(): void
+    {
+        $this->getJson('/api/shipping/settlements?carrier=econt&kind=locker&q=x')->assertStatus(422);
+        $this->getJson('/api/shipping/settlements?carrier=nobody&kind=locker&q=Харманли')->assertStatus(404);
+        $this->getJson('/api/shipping/settlements?carrier=econt&kind=locker&q=Нищоград')->assertOk()->assertHeader('Cache-Control', 'max-age=300, public');
+    }
 }

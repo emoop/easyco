@@ -104,6 +104,52 @@ final class PickupPointLists
     }
 
     /**
+     * COUR-2a.6: what the page needs to tell «your place is wrong» from «your place is right, this courier has no point of this kind there». Computed ONLY for an
+     * empty answer (no extra query otherwise), additive (`data` keeps its shape).
+     *   place_exists  the text IS a known settlement (its name, normalised exactly, or one of its postcodes), whatever the courier and the kind;
+     *   other_kinds   the kinds this courier DOES offer in that place (only for a courier + kind search; omitted when there are none).
+     *
+     * @return array{place_exists: bool, other_kinds?: list<string>}
+     */
+    public function emptyMeta(?string $carrier, string $kind, string $q): array
+    {
+        $digits = preg_match('/^\d{2,12}$/D', $q) === 1;
+        $key = $digits ? '' : BgPostcodes::normalise($q);
+
+        if (! $digits && $key === '') {
+            return ['place_exists' => false];
+        }
+
+        $ids = DB::table('shipping_settlements as s')
+            ->when($digits, static fn ($query) => $query->where('s.postcodes', 'like', '%"'.$q.'"%'), static fn ($query) => $query->where('s.name_key', $key))
+            ->limit(50)->pluck('s.id')->all();
+
+        if ($ids === []) {
+            return ['place_exists' => false];
+        }
+
+        $meta = ['place_exists' => true];
+
+        if ($carrier !== null && $kind !== 'address') {
+            $others = [];
+
+            foreach (['office', 'locker'] as $other) {
+                $query = $other === $kind || $kind === 'pickup' ? null : $this->offerable->query($carrier, $other);
+
+                if ($query !== null && (clone $query)->whereIn('p.settlement_id', $ids)->exists()) {
+                    $others[] = $other;
+                }
+            }
+
+            if ($others !== []) {
+                $meta['other_kinds'] = $others;
+            }
+        }
+
+        return $meta;
+    }
+
+    /**
      * Every settlement (the place of a street address), by the start of its name or by postcode. `type` («гр.» / «с.») is not stored yet: null.
      *
      * @return list<array{id: string, name: string, region: ?string, postcode: ?string, is_split: bool, type: ?string, points: ?int}>

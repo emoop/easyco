@@ -46,7 +46,10 @@ final class PickupPointController extends Controller
             return $this->failed($e);
         }
 
-        return $found === null ? $this->notFound() : $this->ok($found);
+        // COUR-2a.6: only an EMPTY answer carries `meta` (a place that exists but has no point of this kind is not a place that was not found)
+        $meta = $found === [] ? $this->lists->emptyMeta(is_string($request->query('carrier')) ? $request->query('carrier') : null, (string) $request->query('kind'), $q) : null;
+
+        return $found === null ? $this->notFound() : $this->ok($found, $meta);
     }
 
     public function points(Request $request): JsonResponse
@@ -70,10 +73,13 @@ final class PickupPointController extends Controller
         return $found === null ? $this->notFound() : $this->ok($found);
     }
 
-    /** @param list<array<string, mixed>> $data */
-    private function ok(array $data): JsonResponse
+    /**
+     * @param  list<array<string, mixed>>  $data
+     * @param  array<string, mixed>|null  $meta
+     */
+    private function ok(array $data, ?array $meta = null): JsonResponse
     {
-        return response()->json(['data' => $data])->header('Cache-Control', self::CACHE);
+        return response()->json($meta === null ? ['data' => $data] : ['data' => $data, 'meta' => $meta])->header('Cache-Control', self::CACHE);
     }
 
     /** The class only (a message may carry a query); the page falls back to the free-text field on any non-200. */

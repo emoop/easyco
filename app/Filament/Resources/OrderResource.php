@@ -1382,7 +1382,7 @@ class OrderResource extends Resource
             $geo = OrderDeliveryGeo::forPickup($record->country, $record->settlement);
 
             $lines = [
-                $text(__('orders.fields.carrier_code').': '.($record->carrier_code ?? $na)),
+                $text(__('orders.fields.carrier_code').': '.(app(\App\Couriers\CourierDirectory::class)->displayName($record->carrier_code) ?? $na)),
                 // The courier's id of the point: only when the order has one (a DESCRIBED point, typed by the customer, has none).
                 filled($record->pickup_point_reference) ? $text(__('orders.fields.pickup_point_reference').': '.$record->pickup_point_reference) : null,
                 // The office as the customer saw it (stage 4f display snapshot), only when the order stored it.
@@ -2411,6 +2411,8 @@ class OrderResource extends Resource
                     TextInput::make('delivery.address_line_1')->label(__('orders.fields.address_line_1'))->default($record->address_line_1)->visible($isStreet)->required(),
                     TextInput::make('delivery.address_line_2')->label(__('orders.fields.address_line_2'))->default($record->address_line_2)->visible($isStreet),
                     TextInput::make('delivery.carrier_code')->label(__('orders.fields.carrier_code'))->default($record->carrier_code)
+                        // COUR-2a.6.1: the stored text stays what it is (it is edited as it is); the courier's name is shown beside it when it differs
+                        ->helperText(fn (): ?string => ($name = app(\App\Couriers\CourierDirectory::class)->displayName($record->carrier_code)) !== $record->carrier_code ? $name : null)
                         ->required($isPickup),
                     // The point is IDENTIFIED (a courier's id, read-only here: shown only when the row has one) or DESCRIBED (the one text field
                     // the customer typed, editable). Checkout form v2, section 3.

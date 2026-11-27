@@ -100,7 +100,8 @@ class AddressResolver
             postalCode: $postalCode,
             addressLine1: $addressLine1,
             addressLine2: $addressLine2,
-            carrierCode: $carrierCode,
+            // COUR-2a.6: the code of an integrated courier (the display name is mapped by the ONE mapping); any other text stays as typed
+            carrierCode: app(\App\Couriers\CourierDirectory::class)->canonicalCode($carrierCode),
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
             pickupPointName: $pickupPointName,
@@ -146,7 +147,7 @@ class AddressResolver
             static fn (?string $value): string => mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', (string) $value))),
             [
                 $address->deliveryType()->value, $address->country(), $address->city(), $address->postalCode(), $address->addressLine1(),
-                $address->addressLine2(), $address->region(), $address->carrierCode(), $address->pickupPointReference(), $address->settlement(),
+                $address->addressLine2(), $address->region(), app(\App\Couriers\CourierDirectory::class)->canonicalCode($address->carrierCode()), $address->pickupPointReference(), $address->settlement(),
                 $address->pickupPointName(), $address->pickupPointAddress(), $address->pickupPointKind(),
                 $address->recipientFirstName(), $address->recipientLastName(), $address->phone(),
             ],
